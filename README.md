@@ -1,6 +1,8 @@
 # TOON Database Adapter
 
-Convert your database queries to TOON (Token-Oriented Object Notation) format for efficient LLM usage. Reduce token costs by 30-50% compared to JSON when sending structured data to Large Language Models.
+Convert your MongoDB queries to TOON (Token-Oriented Object Notation) format for efficient LLM usage. Reduce token costs by 30-50% compared to JSON when sending structured data to Large Language Models.
+
+This library provides a MongoDB adapter to convert query results into TOON format, making it easy to send database data to LLMs with minimal token usage.
 
 ## Why TOON?
 
@@ -31,8 +33,9 @@ The TOON format uses 30-50% fewer tokens while maintaining the same information.
 
 ## Features
 
+- **MongoDB Support**: Adapter for MongoDB databases
 - **Token Efficiency**: 30-50% reduction in token usage compared to JSON
-- **Works with Existing Databases**: No migration needed - works with your current MongoDB, PostgreSQL, and more
+- **Works with Existing Databases**: No migration needed - works with your current MongoDB
 - **Easy Integration**: Simple adapter pattern - connect and query as usual
 - **Python-First**: Clean, intuitive API designed for Python developers
 - **Bidirectional Conversion**: Encode to TOON, decode back to Python data structures
@@ -54,6 +57,8 @@ uv pip install toondb
 ## Quick Start
 
 ### MongoDB Example
+
+Connect to your MongoDB database and convert query results to TOON format:
 
 ```python
 from toondb import MongoAdapter
@@ -234,9 +239,7 @@ decoded_data = from_toon(toon_string)
 
 ## Supported Databases
 
-- MongoDB (fully supported)
-- PostgreSQL (coming soon)
-- MySQL (coming soon)
+- **MongoDB** - Fully supported with `MongoAdapter`
 
 ## Use Cases
 
@@ -251,7 +254,6 @@ decoded_data = from_toon(toon_string)
 - Python 3.8+
 - [python-toon](https://github.com/xaviviro/python-toon) >= 0.1.3 - TOON format encoder/decoder
 - pymongo (for MongoDB support)
-- psycopg2-binary (for PostgreSQL support, coming soon)
 
 ## Development
 
@@ -259,7 +261,7 @@ decoded_data = from_toon(toon_string)
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/toondb.git
+git clone https://github.com/ameyakhot/toondb.git
 cd toondb
 
 # Install in development mode
@@ -291,8 +293,8 @@ MIT License
 ## Links
 
 - PyPI: https://pypi.org/project/toondb/
-- GitHub: https://github.com/yourusername/toondb
-- Issues: https://github.com/yourusername/toondb/issues
+- GitHub: https://github.com/ameyakhot/toondb
+- Issues: https://github.com/ameyakhot/toondb/issues
 - python-toon library: https://github.com/xaviviro/python-toon
 
 ## Changelog
