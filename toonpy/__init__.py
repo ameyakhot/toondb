@@ -17,7 +17,7 @@ from toonpy.adapters.exceptions import (
 )
 from toonpy.core.converter import to_toon, from_toon
 
-__version__ = "0.1.1"
+__version__ = "0.1.4"
 
 __all__ = [
     "connect",

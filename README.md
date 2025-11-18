@@ -47,13 +47,13 @@ The TOON format uses 30-50% fewer tokens while maintaining the same information.
 Install from PyPI:
 
 ```bash
-pip install toonpy
+pip install toondb
 ```
 
 Or using `uv`:
 
 ```bash
-uv pip install toonpy
+uv pip install toondb
 ```
 
 ## Quick Start
@@ -680,19 +680,19 @@ def get_user_unsafe(user_id: int):
 
 Install all dependencies:
 ```bash
-pip install toonpy psycopg2-binary pymysql pymongo
+pip install toondb psycopg2-binary pymysql pymongo
 ```
 
 Or install only what you need:
 ```bash
 # PostgreSQL only
-pip install toonpy psycopg2-binary
+pip install toondb psycopg2-binary
 
 # MySQL only
-pip install toonpy pymysql
+pip install toondb pymysql
 
 # MongoDB only
-pip install toonpy pymongo
+pip install toondb pymongo
 ```
 
 ## Development
@@ -732,7 +732,7 @@ MIT License
 
 ## Links
 
-- PyPI: https://pypi.org/project/toonpy/
+- PyPI: https://pypi.org/project/toondb/
 - GitHub: https://github.com/ameyakhot/toondb
 - Issues: https://github.com/ameyakhot/toondb/issues
 - python-toon library: https://github.com/xaviviro/python-toon

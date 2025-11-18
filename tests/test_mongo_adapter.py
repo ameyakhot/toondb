@@ -252,6 +252,270 @@ class TestMongoAdapterUnit(unittest.TestCase):
         mock_client.__getitem__ = Mock(return_value=mock_db)
         mock_collection.database.client = mock_client
         return mock_client
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_find_one(self, mock_client_class):
+        """Test find_one method"""
+        mock_collection = self._create_mock_collection([])
+        mock_collection.find_one = Mock(return_value={"_id": ObjectId(), "name": "Alice", "age": 30})
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        result = adapter.find_one({"name": "Alice"})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("alice", result.lower())
+        mock_collection.find_one.assert_called_once_with({"name": "Alice"}, None)
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_find_one_none(self, mock_client_class):
+        """Test find_one with no results"""
+        mock_collection = self._create_mock_collection([])
+        mock_collection.find_one = Mock(return_value=None)
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        result = adapter.find_one({"name": "NonExistent"})
+        
+        self.assertIsInstance(result, str)
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_aggregate(self, mock_client_class):
+        """Test aggregate method"""
+        mock_collection = self._create_mock_collection([])
+        mock_cursor = Mock()
+        mock_cursor.__iter__ = Mock(return_value=iter([
+            {"_id": "admin", "count": 2},
+            {"_id": "user", "count": 3}
+        ]))
+        mock_collection.aggregate = Mock(return_value=mock_cursor)
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        pipeline = [{"$group": {"_id": "$role", "count": {"$sum": 1}}}]
+        result = adapter.aggregate(pipeline)
+        
+        self.assertIsInstance(result, str)
+        mock_collection.aggregate.assert_called_once_with(pipeline)
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_count_documents(self, mock_client_class):
+        """Test count_documents method"""
+        mock_collection = self._create_mock_collection([])
+        mock_collection.count_documents = Mock(return_value=5)
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        result = adapter.count_documents({"role": "admin"})
+        
+        self.assertEqual(result, 5)
+        mock_collection.count_documents.assert_called_once_with({"role": "admin"})
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_distinct(self, mock_client_class):
+        """Test distinct method"""
+        mock_collection = self._create_mock_collection([])
+        mock_collection.distinct = Mock(return_value=["admin", "user", "guest"])
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        result = adapter.distinct("role")
+        
+        self.assertIsInstance(result, str)
+        mock_collection.distinct.assert_called_once_with("role", {})
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_insert_one_from_toon(self, mock_client_class):
+        """Test insert_one_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_collection = self._create_mock_collection([])
+        mock_result = Mock()
+        mock_result.inserted_id = ObjectId()
+        mock_result.acknowledged = True
+        mock_collection.insert_one = Mock(return_value=mock_result)
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        document = {"name": "Test User", "age": 25}
+        toon_string = to_toon([document])
+        result = adapter.insert_one_from_toon(toon_string)
+        
+        self.assertIsInstance(result, str)
+        mock_collection.insert_one.assert_called_once()
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_insert_many_from_toon(self, mock_client_class):
+        """Test insert_many_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_collection = self._create_mock_collection([])
+        mock_result = Mock()
+        mock_result.inserted_ids = [ObjectId(), ObjectId()]
+        mock_result.acknowledged = True
+        mock_collection.insert_many = Mock(return_value=mock_result)
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        documents = [
+            {"name": "User 1", "age": 25},
+            {"name": "User 2", "age": 30}
+        ]
+        toon_string = to_toon(documents)
+        result = adapter.insert_many_from_toon(toon_string)
+        
+        self.assertIsInstance(result, str)
+        mock_collection.insert_many.assert_called_once()
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_update_one_from_toon(self, mock_client_class):
+        """Test update_one_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_collection = self._create_mock_collection([])
+        mock_result = Mock()
+        mock_result.matched_count = 1
+        mock_result.modified_count = 1
+        mock_result.upserted_id = None
+        mock_result.acknowledged = True
+        mock_collection.update_one = Mock(return_value=mock_result)
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        update_data = {"age": 31, "status": "active"}
+        toon_string = to_toon([update_data])
+        result = adapter.update_one_from_toon({"name": "Alice"}, toon_string)
+        
+        self.assertIsInstance(result, str)
+        mock_collection.update_one.assert_called_once()
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_update_many_from_toon(self, mock_client_class):
+        """Test update_many_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_collection = self._create_mock_collection([])
+        mock_result = Mock()
+        mock_result.matched_count = 3
+        mock_result.modified_count = 3
+        mock_result.acknowledged = True
+        mock_collection.update_many = Mock(return_value=mock_result)
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        update_data = {"status": "inactive"}
+        toon_string = to_toon([update_data])
+        result = adapter.update_many_from_toon({"role": "user"}, toon_string)
+        
+        self.assertIsInstance(result, str)
+        mock_collection.update_many.assert_called_once()
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_replace_one_from_toon(self, mock_client_class):
+        """Test replace_one_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_collection = self._create_mock_collection([])
+        mock_result = Mock()
+        mock_result.matched_count = 1
+        mock_result.modified_count = 1
+        mock_result.upserted_id = None
+        mock_result.acknowledged = True
+        mock_collection.replace_one = Mock(return_value=mock_result)
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        replacement = {"name": "Alice Updated", "age": 32, "role": "admin"}
+        toon_string = to_toon([replacement])
+        result = adapter.replace_one_from_toon({"name": "Alice"}, toon_string)
+        
+        self.assertIsInstance(result, str)
+        mock_collection.replace_one.assert_called_once()
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_delete_one(self, mock_client_class):
+        """Test delete_one method"""
+        mock_collection = self._create_mock_collection([])
+        mock_result = Mock()
+        mock_result.deleted_count = 1
+        mock_result.acknowledged = True
+        mock_collection.delete_one = Mock(return_value=mock_result)
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        result = adapter.delete_one({"name": "Test"})
+        
+        self.assertIsInstance(result, str)
+        mock_collection.delete_one.assert_called_once_with({"name": "Test"})
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_delete_many(self, mock_client_class):
+        """Test delete_many method"""
+        mock_collection = self._create_mock_collection([])
+        mock_result = Mock()
+        mock_result.deleted_count = 3
+        mock_result.acknowledged = True
+        mock_collection.delete_many = Mock(return_value=mock_result)
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        result = adapter.delete_many({"role": "guest"})
+        
+        self.assertIsInstance(result, str)
+        mock_collection.delete_many.assert_called_once_with({"role": "guest"})
 
 
 class TestMongoAdapterIntegration(unittest.TestCase):
@@ -465,6 +729,264 @@ class TestMongoAdapterIntegration(unittest.TestCase):
         adapter.close()
         # Should not raise error
         self.assertIsNotNone(adapter.collection)
+    
+    def test_find_one(self):
+        """Test find_one integration"""
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        result = adapter.find_one({"role": "admin"})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("alice", result.lower())
+        adapter.close()
+    
+    def test_find_one_not_found(self):
+        """Test find_one with no match"""
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        result = adapter.find_one({"name": "NonExistentUser12345"})
+        
+        self.assertIsInstance(result, str)
+        adapter.close()
+    
+    def test_aggregate(self):
+        """Test aggregate integration"""
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        pipeline = [
+            {"$group": {"_id": "$role", "count": {"$sum": 1}}}
+        ]
+        result = adapter.aggregate(pipeline)
+        
+        self.assertIsInstance(result, str)
+        adapter.close()
+    
+    def test_count_documents(self):
+        """Test count_documents integration"""
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        count = adapter.count_documents({"role": "admin"})
+        
+        self.assertIsInstance(count, int)
+        self.assertGreaterEqual(count, 0)
+        adapter.close()
+    
+    def test_distinct(self):
+        """Test distinct integration"""
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        result = adapter.distinct("role")
+        
+        self.assertIsInstance(result, str)
+        adapter.close()
+    
+    def test_insert_one_from_toon(self):
+        """Test insert_one_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # Insert test document
+        document = {
+            "name": "Test Insert User",
+            "age": 28,
+            "role": "test",
+            "email": "testinsert@example.com"
+        }
+        toon_string = to_toon([document])
+        result = adapter.insert_one_from_toon(toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("inserted_id", result.lower())
+        
+        # Clean up
+        adapter.delete_one({"email": "testinsert@example.com"})
+        adapter.close()
+    
+    def test_insert_many_from_toon(self):
+        """Test insert_many_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # Insert test documents
+        documents = [
+            {"name": "Test User 1", "age": 25, "role": "test", "email": "test1@example.com"},
+            {"name": "Test User 2", "age": 26, "role": "test", "email": "test2@example.com"}
+        ]
+        toon_string = to_toon(documents)
+        result = adapter.insert_many_from_toon(toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("inserted_ids", result.lower())
+        
+        # Clean up
+        adapter.delete_many({"role": "test", "email": {"$in": ["test1@example.com", "test2@example.com"]}})
+        adapter.close()
+    
+    def test_update_one_from_toon(self):
+        """Test update_one_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # First insert a test document
+        test_doc = {"name": "Update Test", "age": 25, "role": "test", "email": "updatetest@example.com"}
+        adapter.collection.insert_one(test_doc)
+        
+        # Update it
+        update_data = {"age": 30, "status": "updated"}
+        toon_string = to_toon([update_data])
+        result = adapter.update_one_from_toon({"email": "updatetest@example.com"}, toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("matched_count", result.lower())
+        
+        # Verify update
+        updated = adapter.find_one({"email": "updatetest@example.com"})
+        self.assertIn("30", updated)
+        
+        # Clean up
+        adapter.delete_one({"email": "updatetest@example.com"})
+        adapter.close()
+    
+    def test_update_many_from_toon(self):
+        """Test update_many_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # Insert test documents
+        test_docs = [
+            {"name": "Batch Update 1", "age": 20, "role": "batch_test", "email": "batch1@example.com"},
+            {"name": "Batch Update 2", "age": 21, "role": "batch_test", "email": "batch2@example.com"}
+        ]
+        adapter.collection.insert_many(test_docs)
+        
+        # Update them
+        update_data = {"status": "batch_updated"}
+        toon_string = to_toon([update_data])
+        result = adapter.update_many_from_toon({"role": "batch_test"}, toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("matched_count", result.lower())
+        
+        # Clean up
+        adapter.delete_many({"role": "batch_test"})
+        adapter.close()
+    
+    def test_replace_one_from_toon(self):
+        """Test replace_one_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # Insert test document
+        test_doc = {"name": "Replace Test", "age": 25, "role": "test", "email": "replacetest@example.com"}
+        adapter.collection.insert_one(test_doc)
+        
+        # Replace it
+        replacement = {"name": "Replaced User", "age": 35, "email": "replacetest@example.com"}
+        toon_string = to_toon([replacement])
+        result = adapter.replace_one_from_toon({"email": "replacetest@example.com"}, toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("matched_count", result.lower())
+        
+        # Verify replacement
+        replaced = adapter.find_one({"email": "replacetest@example.com"})
+        self.assertIn("replaced", replaced.lower())
+        
+        # Clean up
+        adapter.delete_one({"email": "replacetest@example.com"})
+        adapter.close()
+    
+    def test_delete_one(self):
+        """Test delete_one integration"""
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # Insert test document
+        test_doc = {"name": "Delete Test", "age": 25, "role": "test", "email": "deletetest@example.com"}
+        adapter.collection.insert_one(test_doc)
+        
+        # Delete it
+        result = adapter.delete_one({"email": "deletetest@example.com"})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("deleted_count", result.lower())
+        
+        # Verify deletion
+        deleted = adapter.find_one({"email": "deletetest@example.com"})
+        # Should return empty TOON
+        self.assertIsInstance(deleted, str)
+        
+        adapter.close()
+    
+    def test_delete_many(self):
+        """Test delete_many integration"""
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # Insert test documents
+        test_docs = [
+            {"name": "Batch Delete 1", "age": 20, "role": "delete_test", "email": "batchdel1@example.com"},
+            {"name": "Batch Delete 2", "age": 21, "role": "delete_test", "email": "batchdel2@example.com"}
+        ]
+        adapter.collection.insert_many(test_docs)
+        
+        # Delete them
+        result = adapter.delete_many({"role": "delete_test"})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("deleted_count", result.lower())
+        
+        # Verify deletion
+        remaining = adapter.count_documents({"role": "delete_test"})
+        self.assertEqual(remaining, 0)
+        
+        adapter.close()
 
 
 if __name__ == "__main__":

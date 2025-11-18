@@ -9,7 +9,7 @@ except FileNotFoundError:
 
 setup(
     name="toondb",
-    version="0.1.1",
+    version="0.1.4",
     author="Ameya Khot",
     author_email="ameyakhot18@gmail.com",
     description="Multi-database adapter library that converts query results to TOON format for efficient LLM usage",
@@ -33,8 +33,6 @@ setup(
     ],
     install_requires=[
         "python-toon>=0.1.3",
-        "psycopg2-binary",  # For PostgreSQL
-        "pymongo",          # For MongoDB
     ],
     extras_require={
         "postgres": ["psycopg2-binary>=2.9.0"],
