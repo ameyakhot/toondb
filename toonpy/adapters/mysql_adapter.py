@@ -17,6 +17,10 @@ class MySQLAdapter(BaseAdapter):
         self,
         connection_string: Optional[str] = None,
         connection: Optional[Any] = None,
+        verbose: bool = False,
+        tokenizer_model: str = "gpt-4",
+        log_file: Optional[str] = None,
+        enable_logging: bool = True,
         **kwargs
     ):
         """
@@ -25,12 +29,18 @@ class MySQLAdapter(BaseAdapter):
         Args:
             connection_string: MySQL connection string (mysql://user:pass@host:port/dbname)
             connection: Existing pymysql connection object
+            verbose: If True, track and display token statistics (default: False)
+            tokenizer_model: Model name for tokenizer (default: "gpt-4")
+            log_file: Path to log file for token statistics (default: None, uses stdout)
+            enable_logging: If False, disable logging even when verbose=True (default: True)
             **kwargs: Additional connection parameters (host, port, user, password, database)
 
         Raises:
             ConnectionError: If connection cannot be established
             ValueError: If invalid configuration is provided
         """
+        super().__init__(verbose=verbose, tokenizer_model=tokenizer_model, log_file=log_file, enable_logging=enable_logging)
+        
         if connection is not None:
             self._validate_connection(connection)
             self.connection = connection
@@ -173,13 +183,13 @@ class MySQLAdapter(BaseAdapter):
                 data = [dict(row) for row in results]
                 data = self._clean_mysql_data(data)
                 cursor.close()
-                return self._to_toon(data)
+                return self._to_toon(data, query_type="query")
             else:
                 # Non-SELECT query (INSERT, UPDATE, DELETE)
                 # Commit transaction explicitly for DML operations
                 self.connection.commit()
                 cursor.close()
-                return self._to_toon([])
+                return self._to_toon([], query_type="query")
         
         except pymysql.OperationalError as e:
             # Rollback on connection error

@@ -33,6 +33,7 @@ setup(
     ],
     install_requires=[
         "python-toon>=0.1.3",
+        "tiktoken>=0.5.0",
     ],
     extras_require={
         "postgres": ["psycopg2-binary>=2.9.0"],

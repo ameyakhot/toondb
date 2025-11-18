@@ -935,7 +935,7 @@ class TestMySQLAdapterIntegration(unittest.TestCase):
         except SchemaError:
             # Expected if validation works
             pass
-    
+
     @patch('pymysql.connect')
     def test_insert_and_query_from_toon(self, mock_connect):
         """Test insert_and_query_from_toon method"""

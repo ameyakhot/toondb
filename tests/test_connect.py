@@ -30,7 +30,9 @@ class TestConnectUnit(unittest.TestCase):
         result = connect("postgresql://user:pass@localhost:5432/mydb")
         
         mock_adapter_class.assert_called_once_with(
-            connection_string="postgresql://user:pass@localhost:5432/mydb"
+            connection_string="postgresql://user:pass@localhost:5432/mydb",
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     
@@ -43,7 +45,9 @@ class TestConnectUnit(unittest.TestCase):
         result = connect("postgres://user:pass@localhost:5432/mydb")
         
         mock_adapter_class.assert_called_once_with(
-            connection_string="postgres://user:pass@localhost:5432/mydb"
+            connection_string="postgres://user:pass@localhost:5432/mydb",
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     
@@ -56,7 +60,9 @@ class TestConnectUnit(unittest.TestCase):
         result = connect("mysql://user:pass@localhost:3306/mydb")
         
         mock_adapter_class.assert_called_once_with(
-            connection_string="mysql://user:pass@localhost:3306/mydb"
+            connection_string="mysql://user:pass@localhost:3306/mydb",
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     
@@ -69,7 +75,9 @@ class TestConnectUnit(unittest.TestCase):
         result = connect("mysql+pymysql://user:pass@localhost:3306/mydb")
         
         mock_adapter_class.assert_called_once_with(
-            connection_string="mysql+pymysql://user:pass@localhost:3306/mydb"
+            connection_string="mysql+pymysql://user:pass@localhost:3306/mydb",
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     
@@ -85,7 +93,9 @@ class TestConnectUnit(unittest.TestCase):
             connection_string="mongodb://localhost:27017",
             database="mydb",
             collection_name="users",
-            collection=None
+            collection=None,
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     
@@ -101,7 +111,9 @@ class TestConnectUnit(unittest.TestCase):
             connection_string="mongodb+srv://cluster.mongodb.net",
             database="mydb",
             collection_name="users",
-            collection=None
+            collection=None,
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     
@@ -129,7 +141,9 @@ class TestConnectUnit(unittest.TestCase):
         result = connect("postgres://user:pass@localhost:5432/mydb", db_type="postgresql")
         
         mock_adapter_class.assert_called_once_with(
-            connection_string="postgres://user:pass@localhost:5432/mydb"
+            connection_string="postgres://user:pass@localhost:5432/mydb",
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     
@@ -142,7 +156,9 @@ class TestConnectUnit(unittest.TestCase):
         result = connect("some://url", db_type="postgres")
         
         mock_adapter_class.assert_called_once_with(
-            connection_string="some://url"
+            connection_string="some://url",
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     
@@ -155,7 +171,9 @@ class TestConnectUnit(unittest.TestCase):
         result = connect("some://url", db_type="mysql")
         
         mock_adapter_class.assert_called_once_with(
-            connection_string="some://url"
+            connection_string="some://url",
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     
@@ -171,7 +189,9 @@ class TestConnectUnit(unittest.TestCase):
             connection_string="some://url",
             database="mydb",
             collection_name="users",
-            collection=None
+            collection=None,
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     
@@ -192,6 +212,8 @@ class TestConnectUnit(unittest.TestCase):
         
         mock_adapter_class.assert_called_once_with(
             connection_string=None,
+            verbose=False,
+            tokenizer_model="gpt-4",
             host="localhost",
             port=5432,
             user="user",
@@ -217,6 +239,8 @@ class TestConnectUnit(unittest.TestCase):
         
         mock_adapter_class.assert_called_once_with(
             connection_string=None,
+            verbose=False,
+            tokenizer_model="gpt-4",
             host="localhost",
             port=3306,
             user="user",
@@ -254,7 +278,9 @@ class TestConnectUnit(unittest.TestCase):
             connection_string=None,
             database=None,
             collection_name=None,
-            collection=mock_collection
+            collection=mock_collection,
+            verbose=False,
+            tokenizer_model="gpt-4"
         )
         self.assertEqual(result, mock_adapter)
     

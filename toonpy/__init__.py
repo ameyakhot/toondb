@@ -117,6 +117,10 @@ def _handle_unrecognized_connection_string(connection_string: str) -> None:
 def connect(
     connection_string: Optional[str] = None,
     db_type: Optional[str] = None,
+    verbose: bool = False,
+    tokenizer_model: str = "gpt-4",
+    log_file: Optional[str] = None,
+    enable_logging: bool = True,
     **kwargs
 ) -> BaseAdapter:
     """
@@ -130,6 +134,10 @@ def connect(
             - MySQL: mysql://user:pass@host:port/dbname or mysql+pymysql://...
             - MongoDB: mongodb://host:port or mongodb+srv://... (requires database and collection_name)
         db_type: Explicit database type ("postgresql", "mysql", "mongodb")
+        verbose: If True, track and display token statistics (default: False)
+        tokenizer_model: Model name for tokenizer (default: "gpt-4")
+        log_file: Path to log file for token statistics (default: None, uses stdout)
+        enable_logging: If False, disable logging even when verbose=True (default: True)
         **kwargs: Additional connection parameters
             - For PostgreSQL/MySQL: host, port, user, password, database
             - For MongoDB: database, collection_name (required with connection_string), or collection
@@ -203,11 +211,31 @@ def connect(
     
     db_type = db_type.lower()
     
+    # Extract verbose, tokenizer_model, log_file, and enable_logging from kwargs if present (allow override)
+    verbose_param = kwargs.pop("verbose", verbose)
+    tokenizer_param = kwargs.pop("tokenizer_model", tokenizer_model)
+    log_file_param = kwargs.pop("log_file", log_file)
+    enable_logging_param = kwargs.pop("enable_logging", enable_logging)
+    
     # Route to appropriate adapter
     if db_type in ("postgresql", "postgres"):
-        return PostgresAdapter(connection_string=connection_string, **kwargs)
+        return PostgresAdapter(
+            connection_string=connection_string,
+            verbose=verbose_param,
+            tokenizer_model=tokenizer_param,
+            log_file=log_file_param,
+            enable_logging=enable_logging_param,
+            **kwargs
+        )
     elif db_type == "mysql":
-        return MySQLAdapter(connection_string=connection_string, **kwargs)
+        return MySQLAdapter(
+            connection_string=connection_string,
+            verbose=verbose_param,
+            tokenizer_model=tokenizer_param,
+            log_file=log_file_param,
+            enable_logging=enable_logging_param,
+            **kwargs
+        )
     elif db_type == "mongodb":
         # MongoDB requires database and collection_name when using connection_string
         if connection_string:
@@ -223,7 +251,11 @@ def connect(
             connection_string=connection_string,
             database=kwargs.get("database"),
             collection_name=kwargs.get("collection_name"),
-            collection=kwargs.get("collection")
+            collection=kwargs.get("collection"),
+            verbose=verbose_param,
+            tokenizer_model=tokenizer_param,
+            log_file=log_file_param,
+            enable_logging=enable_logging_param
         )
     else:
         raise ValueError(

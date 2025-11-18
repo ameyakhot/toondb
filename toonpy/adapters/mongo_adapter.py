@@ -14,7 +14,11 @@ class MongoAdapter(BaseAdapter):
         connection_string: Optional[str] = None,
         collection: Optional[str] = None,
         database: Optional[str] = None, 
-        collection_name: Optional[str] = None
+        collection_name: Optional[str] = None,
+        verbose: bool = False,
+        tokenizer_model: str = "gpt-4",
+        log_file: Optional[str] = None,
+        enable_logging: bool = True
     ):
 
         """
@@ -25,7 +29,12 @@ class MongoAdapter(BaseAdapter):
             collection: MongoDB collection name
             database: MongoDB database name
             collection_name: Name of the collection to use for TOON encoding
+            verbose: If True, track and display token statistics (default: False)
+            tokenizer_model: Model name for tokenizer (default: "gpt-4")
+            log_file: Path to log file for token statistics (default: None, uses stdout)
+            enable_logging: If False, disable logging even when verbose=True (default: True)
         """
+        super().__init__(verbose=verbose, tokenizer_model=tokenizer_model, log_file=log_file, enable_logging=enable_logging)
 
         if collection is not None: 
             self.collection = collection
@@ -56,7 +65,7 @@ class MongoAdapter(BaseAdapter):
 
         data = self._clean_mongo_docs(results)
 
-        return self._to_toon(data)
+        return self._to_toon(data, query_type="find")
     
     def query(self, query: Union[str, Dict] = None) -> str:
         """
@@ -94,10 +103,10 @@ class MongoAdapter(BaseAdapter):
         result = self.collection.find_one(query, projection)
         
         if result is None:
-            return self._to_toon([])
+            return self._to_toon([], query_type="find_one")
         
         data = self._clean_mongo_docs([result])
-        return self._to_toon(data)
+        return self._to_toon(data, query_type="find_one")
     
     def aggregate(self, pipeline: List[Dict]) -> str:
         """
@@ -113,7 +122,7 @@ class MongoAdapter(BaseAdapter):
         results = list(cursor)
         
         data = self._clean_mongo_docs(results)
-        return self._to_toon(data)
+        return self._to_toon(data, query_type="aggregate")
     
     def count_documents(self, filter: Dict = None) -> int:
         """
@@ -148,7 +157,7 @@ class MongoAdapter(BaseAdapter):
         
         # Convert to list of dicts for consistent TOON format
         data = [{key: value} for value in distinct_values]
-        return self._to_toon(data)
+        return self._to_toon(data, query_type="distinct")
     
     def insert_one_from_toon(self, toon_string: str) -> str:
         """
@@ -406,11 +415,11 @@ class MongoAdapter(BaseAdapter):
         queried_doc = self.collection.find_one(query_filter, projection)
         
         if queried_doc is None:
-            return self._to_toon([])
+            return self._to_toon([], query_type="insert_and_query_from_toon")
         
         # Clean and return as TOON using same instance
         cleaned = self._clean_mongo_docs([queried_doc])
-        return self._to_toon(cleaned)
+        return self._to_toon(cleaned, query_type="insert_and_query_from_toon")
     
     def insert_many_and_query_from_toon(
         self, 
@@ -471,11 +480,11 @@ class MongoAdapter(BaseAdapter):
         queried_docs = list(cursor)
         
         if not queried_docs:
-            return self._to_toon([])
+            return self._to_toon([], query_type="insert_many_and_query_from_toon")
         
         # Clean and return as TOON using same instance
         cleaned = self._clean_mongo_docs(queried_docs)
-        return self._to_toon(cleaned)
+        return self._to_toon(cleaned, query_type="insert_many_and_query_from_toon")
     
     def update_and_query_from_toon(
         self,
@@ -532,13 +541,13 @@ class MongoAdapter(BaseAdapter):
             queried_doc = self.collection.find_one(query_filter, projection)
             
             if queried_doc is None:
-                return self._to_toon([])
+                return self._to_toon([], query_type="update_and_query_from_toon")
             
             # Clean and return as TOON using same instance
             cleaned = self._clean_mongo_docs([queried_doc])
-            return self._to_toon(cleaned)
+            return self._to_toon(cleaned, query_type="update_and_query_from_toon")
         
-        return self._to_toon([])
+        return self._to_toon([], query_type="update_and_query_from_toon")
     
     def replace_and_query_from_toon(
         self,
@@ -595,11 +604,11 @@ class MongoAdapter(BaseAdapter):
             queried_doc = self.collection.find_one(query_filter, projection)
             
             if queried_doc is None:
-                return self._to_toon([])
+                return self._to_toon([], query_type="replace_and_query_from_toon")
             
             # Clean and return as TOON using same instance
             cleaned = self._clean_mongo_docs([queried_doc])
-            return self._to_toon(cleaned)
+            return self._to_toon(cleaned, query_type="replace_and_query_from_toon")
     
     def delete_one(self, filter: Dict) -> str:
         """

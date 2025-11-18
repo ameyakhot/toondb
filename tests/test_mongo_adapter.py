@@ -516,7 +516,7 @@ class TestMongoAdapterUnit(unittest.TestCase):
         
         self.assertIsInstance(result, str)
         mock_collection.delete_many.assert_called_once_with({"role": "guest"})
-    
+
     @patch('toonpy.adapters.mongo_adapter.MongoClient')
     def test_insert_and_query_from_toon(self, mock_client_class):
         """Test insert_and_query_from_toon method"""

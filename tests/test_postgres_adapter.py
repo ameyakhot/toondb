@@ -560,7 +560,7 @@ class TestPostgresAdapterUnit(unittest.TestCase):
         result = adapter._convert_to_postgres_value(test_uuid_str, "uuid")
         self.assertIsInstance(result, uuid.UUID)
         self.assertEqual(str(result), test_uuid_str)
-    
+
     @patch('psycopg2.connect')
     def test_insert_and_query_from_toon(self, mock_connect):
         """Test insert_and_query_from_toon method"""
