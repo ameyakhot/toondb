@@ -516,6 +516,148 @@ class TestMongoAdapterUnit(unittest.TestCase):
         
         self.assertIsInstance(result, str)
         mock_collection.delete_many.assert_called_once_with({"role": "guest"})
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_insert_and_query_from_toon(self, mock_client_class):
+        """Test insert_and_query_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_collection = self._create_mock_collection([])
+        mock_result = Mock()
+        mock_result.inserted_id = ObjectId()
+        mock_result.acknowledged = True
+        mock_collection.insert_one = Mock(return_value=mock_result)
+        
+        # Mock find_one to return the inserted document
+        inserted_doc = {"_id": mock_result.inserted_id, "name": "Test User", "age": 25}
+        mock_collection.find_one = Mock(return_value=inserted_doc)
+        
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        document = {"name": "Test User", "age": 25}
+        toon_string = to_toon([document])
+        result = adapter.insert_and_query_from_toon(toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("test user", result.lower())
+        mock_collection.insert_one.assert_called_once()
+        mock_collection.find_one.assert_called_once()
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_insert_many_and_query_from_toon(self, mock_client_class):
+        """Test insert_many_and_query_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_collection = self._create_mock_collection([])
+        mock_result = Mock()
+        mock_result.inserted_ids = [ObjectId(), ObjectId()]
+        mock_result.acknowledged = True
+        mock_collection.insert_many = Mock(return_value=mock_result)
+        
+        # Mock find to return inserted documents
+        inserted_docs = [
+            {"_id": mock_result.inserted_ids[0], "name": "User 1", "age": 25},
+            {"_id": mock_result.inserted_ids[1], "name": "User 2", "age": 30}
+        ]
+        mock_cursor = Mock()
+        mock_cursor.__iter__ = Mock(return_value=iter(inserted_docs))
+        mock_cursor.limit = Mock(return_value=mock_cursor)
+        mock_collection.find = Mock(return_value=mock_cursor)
+        
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        documents = [
+            {"name": "User 1", "age": 25},
+            {"name": "User 2", "age": 30}
+        ]
+        toon_string = to_toon(documents)
+        result = adapter.insert_many_and_query_from_toon(toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("user 1", result.lower())
+        self.assertIn("user 2", result.lower())
+        mock_collection.insert_many.assert_called_once()
+        mock_collection.find.assert_called_once()
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_update_and_query_from_toon(self, mock_client_class):
+        """Test update_and_query_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_collection = self._create_mock_collection([])
+        mock_update_result = Mock()
+        mock_update_result.matched_count = 1
+        mock_update_result.modified_count = 1
+        mock_update_result.upserted_id = None
+        mock_update_result.acknowledged = True
+        mock_collection.update_one = Mock(return_value=mock_update_result)
+        
+        # Mock find_one to return updated document
+        updated_doc = {"_id": ObjectId(), "name": "Alice", "age": 31, "status": "active"}
+        mock_collection.find_one = Mock(return_value=updated_doc)
+        
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        update_data = {"age": 31, "status": "active"}
+        toon_string = to_toon([update_data])
+        result = adapter.update_and_query_from_toon({"name": "Alice"}, toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("alice", result.lower())
+        mock_collection.update_one.assert_called_once()
+        mock_collection.find_one.assert_called_once()
+    
+    @patch('toonpy.adapters.mongo_adapter.MongoClient')
+    def test_replace_and_query_from_toon(self, mock_client_class):
+        """Test replace_and_query_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_collection = self._create_mock_collection([])
+        mock_replace_result = Mock()
+        mock_replace_result.matched_count = 1
+        mock_replace_result.modified_count = 1
+        mock_replace_result.upserted_id = None
+        mock_replace_result.acknowledged = True
+        mock_collection.replace_one = Mock(return_value=mock_replace_result)
+        
+        # Mock find_one to return replaced document
+        replaced_doc = {"_id": ObjectId(), "name": "Alice Updated", "age": 32}
+        mock_collection.find_one = Mock(return_value=replaced_doc)
+        
+        mock_client_class.return_value = self._create_mock_client(mock_collection)
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        replacement = {"name": "Alice Updated", "age": 32}
+        toon_string = to_toon([replacement])
+        result = adapter.replace_and_query_from_toon({"name": "Alice"}, toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("alice updated", result.lower())
+        mock_collection.replace_one.assert_called_once()
+        mock_collection.find_one.assert_called_once()
 
 
 class TestMongoAdapterIntegration(unittest.TestCase):
@@ -986,6 +1128,173 @@ class TestMongoAdapterIntegration(unittest.TestCase):
         remaining = adapter.count_documents({"role": "delete_test"})
         self.assertEqual(remaining, 0)
         
+        adapter.close()
+    
+    def test_insert_and_query_from_toon(self):
+        """Test insert_and_query_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"roundtrip{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        adapter.delete_many({"email": unique_email})
+        
+        # Insert and query back
+        document = {
+            "name": "Round Trip Test",
+            "email": unique_email,
+            "age": 28,
+            "role": "test"
+        }
+        toon_string = to_toon([document])
+        result = adapter.insert_and_query_from_toon(toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("round trip test", result.lower())
+        self.assertIn(unique_email, result.lower())
+        self.assertIn("28", result)
+        
+        # Verify it's actual document data (not just operation result)
+        from toonpy.core.converter import from_toon
+        result_data = from_toon(result)
+        self.assertGreater(len(result_data), 0)
+        self.assertIn("_id", result_data[0])
+        self.assertEqual(result_data[0]["email"], unique_email)
+        
+        # Clean up
+        adapter.delete_one({"email": unique_email})
+        adapter.close()
+    
+    def test_insert_many_and_query_from_toon(self):
+        """Test insert_many_and_query_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # Use unique emails to avoid conflicts
+        timestamp = int(time.time())
+        email1 = f"roundtrip1{timestamp}@example.com"
+        email2 = f"roundtrip2{timestamp}@example.com"
+        
+        # Clean up any existing test data first
+        adapter.delete_many({"email": {"$in": [email1, email2]}})
+        
+        # Insert multiple and query back
+        documents = [
+            {"name": "Round Trip 1", "email": email1, "age": 25, "role": "test"},
+            {"name": "Round Trip 2", "email": email2, "age": 26, "role": "test"}
+        ]
+        toon_string = to_toon(documents)
+        result = adapter.insert_many_and_query_from_toon(toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("round trip 1", result.lower())
+        self.assertIn("round trip 2", result.lower())
+        
+        # Verify it's actual document data
+        from toonpy.core.converter import from_toon
+        result_data = from_toon(result)
+        self.assertEqual(len(result_data), 2)
+        self.assertIn("_id", result_data[0])
+        self.assertIn("_id", result_data[1])
+        
+        # Clean up
+        adapter.delete_many({"email": {"$in": [email1, email2]}})
+        adapter.close()
+    
+    def test_update_and_query_from_toon(self):
+        """Test update_and_query_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"updateroundtrip{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        adapter.delete_many({"email": unique_email})
+        
+        # First insert a test document
+        test_doc = {"name": "Update Round Trip", "email": unique_email, "age": 25, "role": "test"}
+        adapter.collection.insert_one(test_doc)
+        
+        # Update and query back
+        update_data = {"age": 35, "status": "updated"}
+        toon_string = to_toon([update_data])
+        result = adapter.update_and_query_from_toon({"email": unique_email}, toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("update round trip", result.lower())
+        
+        # Verify update was applied
+        from toonpy.core.converter import from_toon
+        result_data = from_toon(result)
+        self.assertGreater(len(result_data), 0)
+        self.assertEqual(result_data[0]["age"], 35)
+        self.assertEqual(result_data[0]["status"], "updated")
+        
+        # Clean up
+        adapter.delete_one({"email": unique_email})
+        adapter.close()
+    
+    def test_replace_and_query_from_toon(self):
+        """Test replace_and_query_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        adapter = MongoAdapter(
+            connection_string=MONGO_CONN_STRING,
+            database=MONGO_DATABASE,
+            collection_name="users"
+        )
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"replaceroundtrip{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        adapter.delete_many({"email": unique_email})
+        
+        # First insert a test document
+        test_doc = {"name": "Replace Round Trip", "email": unique_email, "age": 25, "role": "test"}
+        adapter.collection.insert_one(test_doc)
+        
+        # Replace and query back
+        replacement = {"name": "Replaced User", "age": 40, "email": unique_email}
+        toon_string = to_toon([replacement])
+        result = adapter.replace_and_query_from_toon({"email": unique_email}, toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("replaced user", result.lower())
+        
+        # Verify replacement (old fields should be gone, new fields present)
+        from toonpy.core.converter import from_toon
+        result_data = from_toon(result)
+        self.assertGreater(len(result_data), 0)
+        self.assertEqual(result_data[0]["name"], "Replaced User")
+        self.assertEqual(result_data[0]["age"], 40)
+        # role field should be gone (replaced, not updated)
+        self.assertNotIn("role", result_data[0])
+        
+        # Clean up
+        adapter.delete_one({"email": unique_email})
         adapter.close()
 
 

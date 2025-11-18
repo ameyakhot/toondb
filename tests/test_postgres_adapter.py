@@ -727,11 +727,18 @@ class TestPostgresAdapterIntegration(unittest.TestCase):
     def test_insert_one_from_toon(self):
         """Test insert_one_from_toon integration"""
         from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"testinsert{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'testinsert%@example.com'")
         
         # Insert test document
         document = {
             "name": "Test Insert User",
-            "email": "testinsert@example.com",
+            "email": unique_email,
             "age": 28,
             "role": "test"
         }
@@ -744,21 +751,30 @@ class TestPostgresAdapterIntegration(unittest.TestCase):
         # Verify insert
         verify = self.adapter.query(
             "SELECT name FROM users WHERE email = %s",
-            ("testinsert@example.com",)
+            (unique_email,)
         )
         self.assertIn("test insert user", verify.lower())
         
         # Clean up
-        self.adapter.query("DELETE FROM users WHERE email = 'testinsert@example.com'")
+        self.adapter.query("DELETE FROM users WHERE email = %s", (unique_email,))
     
     def test_insert_many_from_toon(self):
         """Test insert_many_from_toon integration"""
         from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique emails to avoid conflicts
+        timestamp = int(time.time())
+        email1 = f"test1{timestamp}@example.com"
+        email2 = f"test2{timestamp}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'test1%@example.com' OR email LIKE 'test2%@example.com'")
         
         # Insert test documents
         documents = [
-            {"name": "Test User 1", "email": "test1@example.com", "age": 25, "role": "test"},
-            {"name": "Test User 2", "email": "test2@example.com", "age": 26, "role": "test"}
+            {"name": "Test User 1", "email": email1, "age": 25, "role": "test"},
+            {"name": "Test User 2", "email": email2, "age": 26, "role": "test"}
         ]
         toon_string = to_toon(documents)
         result = self.adapter.insert_many_from_toon("users", toon_string)
@@ -769,27 +785,34 @@ class TestPostgresAdapterIntegration(unittest.TestCase):
         # Verify inserts
         verify = self.adapter.query(
             "SELECT COUNT(*) as count FROM users WHERE email IN (%s, %s)",
-            ("test1@example.com", "test2@example.com")
+            (email1, email2)
         )
         self.assertIn("2", verify)
         
         # Clean up
-        self.adapter.query("DELETE FROM users WHERE email IN ('test1@example.com', 'test2@example.com')")
+        self.adapter.query("DELETE FROM users WHERE email IN (%s, %s)", (email1, email2))
     
     def test_update_from_toon(self):
         """Test update_from_toon integration"""
         from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"updatetest{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'updatetest%@example.com'")
         
         # First insert a test document
-        self.adapter.query("""
-            INSERT INTO users (name, email, age, role)
-            VALUES ('Update Test', 'updatetest@example.com', 25, 'test')
-        """)
+        self.adapter.query(
+            "INSERT INTO users (name, email, age, role) VALUES (%s, %s, %s, %s)",
+            ("Update Test", unique_email, 25, "test")
+        )
         
         # Update it
         update_data = {"age": 30, "role": "updated"}
         toon_string = to_toon([update_data])
-        result = self.adapter.update_from_toon("users", toon_string, where={"email": "updatetest@example.com"})
+        result = self.adapter.update_from_toon("users", toon_string, where={"email": unique_email})
         
         self.assertIsInstance(result, str)
         self.assertIn("rowcount", result.lower())
@@ -797,12 +820,12 @@ class TestPostgresAdapterIntegration(unittest.TestCase):
         # Verify update
         verify = self.adapter.query(
             "SELECT age FROM users WHERE email = %s",
-            ("updatetest@example.com",)
+            (unique_email,)
         )
         self.assertIn("30", verify)
         
         # Clean up
-        self.adapter.query("DELETE FROM users WHERE email = 'updatetest@example.com'")
+        self.adapter.query("DELETE FROM users WHERE email = %s", (unique_email,))
     
     def test_delete_from_toon(self):
         """Test delete_from_toon integration"""

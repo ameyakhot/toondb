@@ -351,6 +351,256 @@ class MongoAdapter(BaseAdapter):
         }
         return self._to_toon([result_dict])
     
+    def insert_and_query_from_toon(
+        self, 
+        toon_string: str, 
+        query_filter: Optional[Dict] = None,
+        projection: Optional[Dict] = None
+    ) -> str:
+        """
+        Insert TOON data and immediately query it back as TOON.
+        Uses the same instance/session - guaranteed to work.
+        
+        Flow: TOON → insert → query back → TOON (all in same instance)
+        
+        Args:
+            toon_string: TOON formatted string containing document data
+            query_filter: Optional MongoDB filter to query back inserted document.
+                         If None, queries by inserted_id
+            projection: Optional MongoDB projection dictionary
+        
+        Returns:
+            str: TOON formatted string with queried document data
+        
+        Example:
+            >>> adapter = MongoAdapter(...)
+            >>> toon_data = to_toon([{"name": "Alice", "age": 30}])
+            >>> result = adapter.insert_and_query_from_toon(toon_data)
+            >>> # Returns TOON with the inserted document (with _id)
+        """
+        from toonpy.core.converter import from_toon
+        
+        # Parse TOON input
+        data = from_toon(toon_string)
+        
+        # Handle both single dict and list with one dict
+        if isinstance(data, list):
+            if len(data) == 0:
+                raise ValueError("TOON string must contain at least one document")
+            document = data[0]
+        elif isinstance(data, dict):
+            document = data
+        else:
+            raise ValueError(f"TOON string must decode to a dict or list of dicts, got {type(data)}")
+        
+        # Insert using same instance (self.collection)
+        result = self.collection.insert_one(document)
+        inserted_id = result.inserted_id
+        
+        # Query back using same instance
+        if query_filter is None:
+            # Default: query by inserted_id
+            query_filter = {"_id": inserted_id}
+        
+        # Use same instance to query back
+        queried_doc = self.collection.find_one(query_filter, projection)
+        
+        if queried_doc is None:
+            return self._to_toon([])
+        
+        # Clean and return as TOON using same instance
+        cleaned = self._clean_mongo_docs([queried_doc])
+        return self._to_toon(cleaned)
+    
+    def insert_many_and_query_from_toon(
+        self, 
+        toon_string: str, 
+        query_filter: Optional[Dict] = None,
+        projection: Optional[Dict] = None,
+        limit: Optional[int] = None
+    ) -> str:
+        """
+        Insert multiple TOON documents and immediately query them back as TOON.
+        Uses the same instance/session - guaranteed to work.
+        
+        Flow: TOON → bulk insert → query back → TOON (all in same instance)
+        
+        Args:
+            toon_string: TOON formatted string containing list of documents
+            query_filter: Optional MongoDB filter to query back inserted documents.
+                         If None, queries by inserted_ids
+            projection: Optional MongoDB projection dictionary
+            limit: Optional limit on number of documents to return
+        
+        Returns:
+            str: TOON formatted string with queried documents
+        
+        Example:
+            >>> adapter = MongoAdapter(...)
+            >>> toon_data = to_toon([{"name": "Alice"}, {"name": "Bob"}])
+            >>> result = adapter.insert_many_and_query_from_toon(toon_data)
+            >>> # Returns TOON with both inserted documents (with _ids)
+        """
+        from toonpy.core.converter import from_toon
+        
+        # Parse TOON input
+        data = from_toon(toon_string)
+        
+        # Ensure data is a list
+        if not isinstance(data, list):
+            data = [data]
+        
+        if len(data) == 0:
+            raise ValueError("TOON string must contain at least one document")
+        
+        # Insert using same instance (self.collection)
+        result = self.collection.insert_many(data, ordered=True)
+        inserted_ids = result.inserted_ids
+        
+        # Query back using same instance
+        if query_filter is None:
+            # Default: query by inserted_ids
+            query_filter = {"_id": {"$in": inserted_ids}}
+        
+        # Use same instance to query back
+        cursor = self.collection.find(query_filter, projection)
+        
+        if limit is not None:
+            cursor = cursor.limit(limit)
+        
+        queried_docs = list(cursor)
+        
+        if not queried_docs:
+            return self._to_toon([])
+        
+        # Clean and return as TOON using same instance
+        cleaned = self._clean_mongo_docs(queried_docs)
+        return self._to_toon(cleaned)
+    
+    def update_and_query_from_toon(
+        self,
+        filter: Dict,
+        toon_string: str,
+        projection: Optional[Dict] = None,
+        upsert: bool = False
+    ) -> str:
+        """
+        Update document from TOON and immediately query it back as TOON.
+        Uses the same instance/session - guaranteed to work.
+        
+        Flow: TOON → update → query back → TOON (all in same instance)
+        
+        Args:
+            filter: MongoDB filter dictionary to find document to update
+            toon_string: TOON formatted string with update data
+            projection: Optional MongoDB projection dictionary
+            upsert: If True, insert if document doesn't exist
+        
+        Returns:
+            str: TOON formatted string with updated document data
+        
+        Example:
+            >>> adapter = MongoAdapter(...)
+            >>> update_data = to_toon([{"age": 31, "status": "active"}])
+            >>> result = adapter.update_and_query_from_toon(
+            ...     {"name": "Alice"}, 
+            ...     update_data
+            ... )
+            >>> # Returns TOON with updated document
+        """
+        from toonpy.core.converter import from_toon
+        
+        # Update using existing method (uses same instance)
+        update_result = self.update_one_from_toon(filter, toon_string, upsert=upsert)
+        
+        # Extract matched/upserted ID from update result
+        result_data = from_toon(update_result)
+        if result_data and len(result_data) > 0:
+            result_dict = result_data[0]
+            upserted_id = result_dict.get("upserted_id")
+            
+            # Determine what to query
+            if upserted_id:
+                # Document was inserted (upsert), query by upserted_id
+                from bson import ObjectId
+                query_filter = {"_id": ObjectId(upserted_id)}
+            else:
+                # Document was updated, use original filter
+                query_filter = filter
+            
+            # Query back using same instance
+            queried_doc = self.collection.find_one(query_filter, projection)
+            
+            if queried_doc is None:
+                return self._to_toon([])
+            
+            # Clean and return as TOON using same instance
+            cleaned = self._clean_mongo_docs([queried_doc])
+            return self._to_toon(cleaned)
+        
+        return self._to_toon([])
+    
+    def replace_and_query_from_toon(
+        self,
+        filter: Dict,
+        toon_string: str,
+        projection: Optional[Dict] = None,
+        upsert: bool = False
+    ) -> str:
+        """
+        Replace document from TOON and immediately query it back as TOON.
+        Uses the same instance/session - guaranteed to work.
+        
+        Flow: TOON → replace → query back → TOON (all in same instance)
+        
+        Args:
+            filter: MongoDB filter dictionary to find document to replace
+            toon_string: TOON formatted string with replacement document
+            projection: Optional MongoDB projection dictionary
+            upsert: If True, insert if document doesn't exist
+        
+        Returns:
+            str: TOON formatted string with replaced document data
+        
+        Example:
+            >>> adapter = MongoAdapter(...)
+            >>> replacement = to_toon([{"name": "Alice Updated", "age": 32}])
+            >>> result = adapter.replace_and_query_from_toon(
+            ...     {"name": "Alice"}, 
+            ...     replacement
+            ... )
+            >>> # Returns TOON with replaced document
+        """
+        from toonpy.core.converter import from_toon
+        
+        # Replace using existing method (uses same instance)
+        replace_result = self.replace_one_from_toon(filter, toon_string, upsert=upsert)
+        
+        # Extract matched/upserted ID from replace result
+        result_data = from_toon(replace_result)
+        if result_data and len(result_data) > 0:
+            result_dict = result_data[0]
+            upserted_id = result_dict.get("upserted_id")
+            
+            # Determine what to query
+            if upserted_id:
+                # Document was inserted (upsert), query by upserted_id
+                from bson import ObjectId
+                query_filter = {"_id": ObjectId(upserted_id)}
+            else:
+                # Document was replaced, use original filter
+                query_filter = filter
+            
+            # Query back using same instance
+            queried_doc = self.collection.find_one(query_filter, projection)
+            
+            if queried_doc is None:
+                return self._to_toon([])
+            
+            # Clean and return as TOON using same instance
+            cleaned = self._clean_mongo_docs([queried_doc])
+            return self._to_toon(cleaned)
+    
     def delete_one(self, filter: Dict) -> str:
         """
         Delete single document matching filter.

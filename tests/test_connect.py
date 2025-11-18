@@ -443,7 +443,7 @@ class TestConnectIntegration(unittest.TestCase):
         adapter = connect(
             db_type="postgresql",
             host="localhost",
-            port=5432,
+            port=5433,
             user="testuser",
             password="testpass",
             database="testdb"
@@ -463,7 +463,7 @@ class TestConnectIntegration(unittest.TestCase):
         adapter = connect(
             db_type="mysql",
             host="localhost",
-            port=3306,
+            port=3307,
             user="testuser",
             password="testpass",
             database="testdb"
