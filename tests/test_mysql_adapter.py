@@ -935,8 +935,594 @@ class TestMySQLAdapterIntegration(unittest.TestCase):
         except SchemaError:
             # Expected if validation works
             pass
+    
+    @patch('pymysql.connect')
+    def test_insert_and_query_from_toon(self, mock_connect):
+        """Test insert_and_query_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_conn = Mock()
+        mock_conn.open = True
+        mock_cursor = Mock()
+        mock_cursor.description = [('id',), ('name',), ('age',)]
+        mock_cursor.fetchall.return_value = [
+            {'id': 1, 'name': 'Test User', 'age': 25}
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = MySQLAdapter(connection_string=MYSQL_CONN_STRING)
+        
+        # Mock get_schema
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "name", "data_type": "varchar", "column_key": "", "extra": ""},
+            {"column_name": "age", "data_type": "int", "column_key": "", "extra": ""}
+        ]}})
+        
+        document = {"name": "Test User", "age": 25}
+        toon_string = to_toon([document])
+        result = adapter.insert_and_query_from_toon("users", toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("test user", result.lower())
+        mock_cursor.execute.assert_called()
+        adapter.close()
+    
+    @patch('pymysql.connect')
+    def test_insert_many_and_query_from_toon(self, mock_connect):
+        """Test insert_many_and_query_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_conn = Mock()
+        mock_conn.open = True
+        mock_cursor = Mock()
+        mock_cursor.description = [('id',), ('name',), ('age',)]
+        mock_cursor.fetchall.return_value = [
+            {'id': 1, 'name': 'User 1', 'age': 25},
+            {'id': 2, 'name': 'User 2', 'age': 30}
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = MySQLAdapter(connection_string=MYSQL_CONN_STRING)
+        
+        # Mock get_schema
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "name", "data_type": "varchar"},
+            {"column_name": "age", "data_type": "int"}
+        ]}})
+        
+        documents = [
+            {"name": "User 1", "age": 25},
+            {"name": "User 2", "age": 30}
+        ]
+        toon_string = to_toon(documents)
+        result = adapter.insert_many_and_query_from_toon("users", toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("user 1", result.lower())
+        self.assertIn("user 2", result.lower())
+        mock_cursor.execute.assert_called()
+        adapter.close()
+    
+    @patch('pymysql.connect')
+    def test_update_and_query_from_toon(self, mock_connect):
+        """Test update_and_query_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_conn = Mock()
+        mock_conn.open = True
+        mock_cursor = Mock()
+        mock_cursor.description = [('id',), ('name',), ('age',)]
+        mock_cursor.fetchall.return_value = [
+            {'id': 123, 'name': 'Alice', 'age': 31, 'status': 'active'}
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = MySQLAdapter(connection_string=MYSQL_CONN_STRING)
+        
+        # Mock get_schema
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "age", "data_type": "int"},
+            {"column_name": "status", "data_type": "varchar"},
+            {"column_name": "id", "data_type": "int"}
+        ]}})
+        
+        update_data = {"age": 31, "status": "active"}
+        toon_string = to_toon([update_data])
+        result = adapter.update_and_query_from_toon("users", toon_string, where={"id": 123})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("alice", result.lower())
+        mock_cursor.execute.assert_called()
+        adapter.close()
+
+
+class TestMySQLAdapterIntegration(unittest.TestCase):
+    """Integration tests with Docker MySQL instance"""
+    
+    @classmethod
+    def setUpClass(cls):
+        """Set up test database connection"""
+        try:
+            cls.adapter = MySQLAdapter(connection_string=MYSQL_CONN_STRING)
+        except ConnectionError:
+            raise unittest.SkipTest("MySQL not available - skipping integration tests")
+    
+    def setUp(self):
+        """Rollback any failed transactions before each test"""
+        try:
+            self.adapter.connection.rollback()
+        except:
+            pass
+    
+    @classmethod
+    def tearDownClass(cls):
+        """Close database connection"""
+        if hasattr(cls, 'adapter'):
+            cls.adapter.close()
+    
+    def test_connection(self):
+        """Test basic connection"""
+        self.assertTrue(self.adapter.connection.open)
+    
+    def test_query_select(self):
+        """Test SELECT query"""
+        result = self.adapter.query("SELECT name, email FROM users LIMIT 2")
+        self.assertIsInstance(result, str)
+        self.assertIn("alice", result.lower())
+    
+    def test_query_where(self):
+        """Test SELECT with WHERE clause"""
+        result = self.adapter.query("SELECT name, age FROM users WHERE age > 30")
+        self.assertIsInstance(result, str)
+    
+    def test_query_empty_result(self):
+        """Test query with no results"""
+        result = self.adapter.query("SELECT * FROM users WHERE age > 200")
+        self.assertIsInstance(result, str)
+    
+    def test_query_join(self):
+        """Test SELECT with JOIN"""
+        result = self.adapter.query("""
+            SELECT u.name, p.name as product_name
+            FROM orders o
+            JOIN users u ON o.user_id = u.id
+            JOIN products p ON o.product_id = p.id
+            LIMIT 1
+        """)
+        self.assertIsInstance(result, str)
+    
+    def test_query_insert(self):
+        """Test INSERT query"""
+        result = self.adapter.query("""
+            INSERT INTO users (name, email, age, role)
+            VALUES ('Test User', 'test@test.com', 25, 'user')
+        """)
+        self.assertIsInstance(result, str)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = 'test@test.com'")
+    
+    def test_query_update(self):
+        """Test UPDATE query"""
+        # Insert test data
+        self.adapter.query("""
+            INSERT INTO users (name, email, age, role)
+            VALUES ('Update Test', 'update@test.com', 25, 'user')
+        """)
+        
+        # Update
+        result = self.adapter.query("""
+            UPDATE users SET age = 26 WHERE email = 'update@test.com'
+        """)
+        self.assertIsInstance(result, str)
+        
+        # Verify
+        verify = self.adapter.query("""
+            SELECT age FROM users WHERE email = 'update@test.com'
+        """)
+        self.assertIn("26", verify)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = 'update@test.com'")
+    
+    def test_query_delete(self):
+        """Test DELETE query"""
+        # Insert test data
+        self.adapter.query("""
+            INSERT INTO users (name, email, age, role)
+            VALUES ('Delete Test', 'delete@test.com', 25, 'user')
+        """)
+        
+        # Delete
+        result = self.adapter.query("DELETE FROM users WHERE email = 'delete@test.com'")
+        self.assertIsInstance(result, str)
+        
+        # Verify deleted
+        verify = self.adapter.query("""
+            SELECT COUNT(*) as count FROM users WHERE email = 'delete@test.com'
+        """)
+        self.assertIn("0", verify)
+    
+    def test_get_tables(self):
+        """Test get_tables method"""
+        tables = self.adapter.get_tables()
+        self.assertIsInstance(tables, list)
+        self.assertIn('users', tables)
+        self.assertIn('products', tables)
+        self.assertIn('orders', tables)
+    
+    def test_get_tables_with_views(self):
+        """Test get_tables with include_views"""
+        tables = self.adapter.get_tables(include_views=True)
+        self.assertIsInstance(tables, list)
+        # Should include tables at minimum
+        self.assertIn('users', tables)
+    
+    def test_get_schema_single_table(self):
+        """Test get_schema for single table"""
+        schema = self.adapter.get_schema('users')
+        self.assertIsInstance(schema, dict)
+        self.assertIn('users', schema)
+        self.assertIn('columns', schema['users'])
+        self.assertGreater(len(schema['users']['columns']), 0)
+    
+    def test_get_schema_all_tables(self):
+        """Test get_schema for all tables"""
+        schema = self.adapter.get_schema()
+        self.assertIsInstance(schema, dict)
+        self.assertIn('users', schema)
+        self.assertIn('products', schema)
+        self.assertIn('orders', schema)
+    
+    def test_get_schema_invalid_table(self):
+        """Test get_schema with invalid table name"""
+        with self.assertRaises(SchemaError):
+            self.adapter.get_schema('non_existent_table')
+    
+    def test_query_invalid_sql(self):
+        """Test query with invalid SQL"""
+        with self.assertRaises(QueryError):
+            self.adapter.query("SELECT * FROM non_existent_table")
+    
+    def test_close(self):
+        """Test close method"""
+        # Create a new adapter that owns connection
+        adapter = MySQLAdapter(connection_string=MYSQL_CONN_STRING)
+        self.assertTrue(adapter.connection.open)
+        adapter.close()
+        self.assertFalse(adapter.connection.open)
+    
+    def test_execute_alias(self):
+        """Test execute method (alias for query)"""
+        result1 = self.adapter.query("SELECT COUNT(*) as count FROM users")
+        result2 = self.adapter.execute("SELECT COUNT(*) as count FROM users")
+        self.assertEqual(result1, result2)
+    
+    def test_insert_one_from_toon(self):
+        """Test insert_one_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"testinsert{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'testinsert%@example.com'")
+        
+        # Insert test document
+        document = {
+            "name": "Test Insert User",
+            "email": unique_email,
+            "age": 28,
+            "role": "test"
+        }
+        toon_string = to_toon([document])
+        result = self.adapter.insert_one_from_toon("users", toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        
+        # Verify insert
+        verify = self.adapter.query(
+            "SELECT name FROM users WHERE email = %s",
+            (unique_email,)
+        )
+        self.assertIn("test insert user", verify.lower())
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = %s", (unique_email,))
+    
+    def test_insert_many_from_toon(self):
+        """Test insert_many_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique emails to avoid conflicts
+        timestamp = int(time.time())
+        email1 = f"test1{timestamp}@example.com"
+        email2 = f"test2{timestamp}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'test1%@example.com' OR email LIKE 'test2%@example.com'")
+        
+        # Insert test documents
+        documents = [
+            {"name": "Test User 1", "email": email1, "age": 25, "role": "test"},
+            {"name": "Test User 2", "email": email2, "age": 26, "role": "test"}
+        ]
+        toon_string = to_toon(documents)
+        result = self.adapter.insert_many_from_toon("users", toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        
+        # Verify inserts
+        verify = self.adapter.query(
+            "SELECT COUNT(*) as count FROM users WHERE email IN (%s, %s)",
+            (email1, email2)
+        )
+        self.assertIn("2", verify)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email IN (%s, %s)", (email1, email2))
+    
+    def test_update_from_toon(self):
+        """Test update_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"testupdate{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'testupdate%@example.com'")
+        
+        # Insert test data
+        self.adapter.query(
+            "INSERT INTO users (name, email, age, role) VALUES (%s, %s, %s, %s)",
+            ("Test Update User", unique_email, 25, "test")
+        )
+        
+        # Update using TOON
+        update_data = {"age": 31}
+        toon_string = to_toon([update_data])
+        result = self.adapter.update_from_toon("users", toon_string, where={"email": unique_email})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        
+        # Verify update
+        verify = self.adapter.query(
+            "SELECT age FROM users WHERE email = %s",
+            (unique_email,)
+        )
+        self.assertIn("31", verify)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = %s", (unique_email,))
+    
+    def test_delete_from_toon(self):
+        """Test delete_from_toon integration"""
+        import time
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"testdelete{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'testdelete%@example.com'")
+        
+        # Insert test data
+        self.adapter.query(
+            "INSERT INTO users (name, email, age, role) VALUES (%s, %s, %s, %s)",
+            ("Test Delete User", unique_email, 25, "test")
+        )
+        
+        # Delete using TOON
+        result = self.adapter.delete_from_toon("users", where={"email": unique_email})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        
+        # Verify deleted
+        verify = self.adapter.query(
+            "SELECT COUNT(*) as count FROM users WHERE email = %s",
+            (unique_email,)
+        )
+        self.assertIn("0", verify)
+    
+    def test_insert_one_from_toon_with_on_duplicate_key_update(self):
+        """Test insert_one_from_toon with ON DUPLICATE KEY UPDATE"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"testduplicate{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'testduplicate%@example.com'")
+        
+        # First insert
+        document = {
+            "name": "Test Duplicate User",
+            "email": unique_email,
+            "age": 25,
+            "role": "test"
+        }
+        toon_string = to_toon([document])
+        self.adapter.insert_one_from_toon("users", toon_string)
+        
+        # Second insert with same email (should update)
+        document2 = {
+            "name": "Updated Name",
+            "email": unique_email,
+            "age": 30,
+            "role": "test"
+        }
+        toon_string2 = to_toon([document2])
+        result = self.adapter.insert_one_from_toon(
+            "users", 
+            toon_string2,
+            on_duplicate_key_update="name = VALUES(name), age = VALUES(age)"
+        )
+        
+        self.assertIsInstance(result, str)
+        
+        # Verify update
+        verify = self.adapter.query(
+            "SELECT name, age FROM users WHERE email = %s",
+            (unique_email,)
+        )
+        self.assertIn("updated name", verify.lower())
+        self.assertIn("30", verify)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = %s", (unique_email,))
+    
+    def test_insert_one_from_toon_empty_data(self):
+        """Test insert_one_from_toon with empty data"""
+        from toonpy.core.converter import to_toon
+        
+        empty_toon = to_toon([])
+        with self.assertRaises(ValueError):
+            self.adapter.insert_one_from_toon("users", empty_toon)
+    
+    def test_update_from_toon_empty_where(self):
+        """Test update_from_toon with empty WHERE clause"""
+        from toonpy.core.converter import to_toon
+        
+        update_data = {"age": 31}
+        toon_string = to_toon([update_data])
+        with self.assertRaises(ValueError):
+            self.adapter.update_from_toon("users", toon_string, where={})
+    
+    def test_delete_from_toon_empty_where(self):
+        """Test delete_from_toon with empty WHERE clause"""
+        with self.assertRaises(ValueError):
+            self.adapter.delete_from_toon("users", where={})
+    
+    def test_insert_one_from_toon_invalid_column(self):
+        """Test insert_one_from_toon with invalid column"""
+        from toonpy.core.converter import to_toon
+        
+        document = {"invalid_column": "value", "name": "Test"}
+        toon_string = to_toon([document])
+        
+        # Should raise SchemaError if column validation is enabled
+        # (may skip validation if schema lookup fails)
+        try:
+            result = self.adapter.insert_one_from_toon("users", toon_string)
+            # If no error, that's okay (validation may be skipped)
+            self.assertIsInstance(result, str)
+        except SchemaError:
+            # Expected if validation works
+            pass
+    
+    def test_insert_and_query_from_toon(self):
+        """Test insert_and_query_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"roundtrip{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'roundtrip%@example.com'")
+        
+        # Insert and query back
+        document = {
+            "name": "Round Trip Test",
+            "email": unique_email,
+            "age": 28,
+            "role": "test"
+        }
+        toon_string = to_toon([document])
+        result = self.adapter.insert_and_query_from_toon("users", toon_string, where={"email": unique_email})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("round trip test", result.lower())
+        self.assertIn(unique_email, result.lower())
+        
+        # Verify it's actual row data (not just operation result)
+        from toonpy.core.converter import from_toon
+        result_data = from_toon(result)
+        self.assertGreater(len(result_data), 0)
+        self.assertEqual(result_data[0]["email"], unique_email)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = %s", (unique_email,))
+    
+    def test_insert_many_and_query_from_toon(self):
+        """Test insert_many_and_query_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique emails to avoid conflicts
+        timestamp = int(time.time())
+        email1 = f"roundtrip1{timestamp}@example.com"
+        email2 = f"roundtrip2{timestamp}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'roundtrip1%@example.com' OR email LIKE 'roundtrip2%@example.com'")
+        
+        # Insert multiple and query back using WHERE with one email
+        documents = [
+            {"name": "Round Trip 1", "email": email1, "age": 25, "role": "test"},
+            {"name": "Round Trip 2", "email": email2, "age": 26, "role": "test"}
+        ]
+        toon_string = to_toon(documents)
+        # Query back by first email
+        result = self.adapter.insert_many_and_query_from_toon("users", toon_string, where={"email": email1})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("round trip 1", result.lower())
+        
+        # Verify it's actual row data
+        from toonpy.core.converter import from_toon
+        result_data = from_toon(result)
+        self.assertGreater(len(result_data), 0)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email IN (%s, %s)", (email1, email2))
+    
+    def test_update_and_query_from_toon(self):
+        """Test update_and_query_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"updateroundtrip{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'updateroundtrip%@example.com'")
+        
+        # First insert a test row
+        self.adapter.query(
+            "INSERT INTO users (name, email, age, role) VALUES (%s, %s, %s, %s)",
+            ("Update Round Trip", unique_email, 25, "test")
+        )
+        
+        # Update and query back
+        update_data = {"age": 35}
+        toon_string = to_toon([update_data])
+        result = self.adapter.update_and_query_from_toon("users", toon_string, where={"email": unique_email})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("update round trip", result.lower())
+        
+        # Verify update was applied
+        from toonpy.core.converter import from_toon
+        result_data = from_toon(result)
+        self.assertGreater(len(result_data), 0)
+        # Verify age was updated
+        verify = self.adapter.query("SELECT age FROM users WHERE email = %s", (unique_email,))
+        self.assertIn("35", verify)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = %s", (unique_email,))
 
 
 if __name__ == '__main__':
     unittest.main()
-

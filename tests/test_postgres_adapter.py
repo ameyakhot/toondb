@@ -560,6 +560,110 @@ class TestPostgresAdapterUnit(unittest.TestCase):
         result = adapter._convert_to_postgres_value(test_uuid_str, "uuid")
         self.assertIsInstance(result, uuid.UUID)
         self.assertEqual(str(result), test_uuid_str)
+    
+    @patch('psycopg2.connect')
+    def test_insert_and_query_from_toon(self, mock_connect):
+        """Test insert_and_query_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.description = [('id',), ('name',), ('age',)]
+        mock_cursor.fetchone.return_value = (1,)
+        mock_cursor.fetchall.return_value = [
+            {'id': 1, 'name': 'Test User', 'age': 25}
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "name", "data_type": "varchar", "is_primary_key": False},
+            {"column_name": "age", "data_type": "int", "is_primary_key": False},
+            {"column_name": "id", "data_type": "serial", "is_primary_key": True}
+        ]}})
+        
+        document = {"name": "Test User", "age": 25}
+        toon_string = to_toon([document])
+        result = adapter.insert_and_query_from_toon("users", toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("test user", result.lower())
+        mock_cursor.execute.assert_called()
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_insert_many_and_query_from_toon(self, mock_connect):
+        """Test insert_many_and_query_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.description = [('id',), ('name',), ('age',)]
+        mock_cursor.fetchall.return_value = [
+            {'id': 1, 'name': 'User 1', 'age': 25},
+            {'id': 2, 'name': 'User 2', 'age': 30}
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "name", "data_type": "varchar"},
+            {"column_name": "age", "data_type": "int"}
+        ]}})
+        
+        documents = [
+            {"name": "User 1", "age": 25},
+            {"name": "User 2", "age": 30}
+        ]
+        toon_string = to_toon(documents)
+        result = adapter.insert_many_and_query_from_toon("users", toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("user 1", result.lower())
+        self.assertIn("user 2", result.lower())
+        mock_cursor.execute.assert_called()
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_update_and_query_from_toon(self, mock_connect):
+        """Test update_and_query_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.description = [('id',), ('name',), ('age',)]
+        mock_cursor.fetchall.return_value = [
+            {'id': 123, 'name': 'Alice', 'age': 31, 'status': 'active'}
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "age", "data_type": "int"},
+            {"column_name": "status", "data_type": "varchar"},
+            {"column_name": "id", "data_type": "int"}
+        ]}})
+        
+        update_data = {"age": 31, "status": "active"}
+        toon_string = to_toon([update_data])
+        result = adapter.update_and_query_from_toon("users", toon_string, where={"id": 123})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("alice", result.lower())
+        mock_cursor.execute.assert_called()
+        adapter.close()
 
 
 class TestPostgresAdapterIntegration(unittest.TestCase):
@@ -847,6 +951,109 @@ class TestPostgresAdapterIntegration(unittest.TestCase):
             ("deletetest@example.com",)
         )
         self.assertIn("0", verify)
+    
+    def test_insert_and_query_from_toon(self):
+        """Test insert_and_query_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"roundtrip{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'roundtrip%@example.com'")
+        
+        # Insert and query back
+        document = {
+            "name": "Round Trip Test",
+            "email": unique_email,
+            "age": 28,
+            "role": "test"
+        }
+        toon_string = to_toon([document])
+        result = self.adapter.insert_and_query_from_toon("users", toon_string, where={"email": unique_email})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("round trip test", result.lower())
+        self.assertIn(unique_email, result.lower())
+        
+        # Verify it's actual row data (not just operation result)
+        from toonpy.core.converter import from_toon
+        result_data = from_toon(result)
+        self.assertGreater(len(result_data), 0)
+        self.assertEqual(result_data[0]["email"], unique_email)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = %s", (unique_email,))
+    
+    def test_insert_many_and_query_from_toon(self):
+        """Test insert_many_and_query_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique emails to avoid conflicts
+        timestamp = int(time.time())
+        email1 = f"roundtrip1{timestamp}@example.com"
+        email2 = f"roundtrip2{timestamp}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'roundtrip1%@example.com' OR email LIKE 'roundtrip2%@example.com'")
+        
+        # Insert multiple and query back using WHERE with one email
+        documents = [
+            {"name": "Round Trip 1", "email": email1, "age": 25, "role": "test"},
+            {"name": "Round Trip 2", "email": email2, "age": 26, "role": "test"}
+        ]
+        toon_string = to_toon(documents)
+        # Query back by first email
+        result = self.adapter.insert_many_and_query_from_toon("users", toon_string, where={"email": email1})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("round trip 1", result.lower())
+        
+        # Verify it's actual row data
+        from toonpy.core.converter import from_toon
+        result_data = from_toon(result)
+        self.assertGreater(len(result_data), 0)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email IN (%s, %s)", (email1, email2))
+    
+    def test_update_and_query_from_toon(self):
+        """Test update_and_query_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        import time
+        
+        # Use unique email to avoid conflicts
+        unique_email = f"updateroundtrip{int(time.time())}@example.com"
+        
+        # Clean up any existing test data first
+        self.adapter.query("DELETE FROM users WHERE email LIKE 'updateroundtrip%@example.com'")
+        
+        # First insert a test row
+        self.adapter.query(
+            "INSERT INTO users (name, email, age, role) VALUES (%s, %s, %s, %s)",
+            ("Update Round Trip", unique_email, 25, "test")
+        )
+        
+        # Update and query back
+        update_data = {"age": 35}
+        toon_string = to_toon([update_data])
+        result = self.adapter.update_and_query_from_toon("users", toon_string, where={"email": unique_email})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("update round trip", result.lower())
+        
+        # Verify update was applied
+        from toonpy.core.converter import from_toon
+        result_data = from_toon(result)
+        self.assertGreater(len(result_data), 0)
+        # Verify age was updated
+        verify = self.adapter.query("SELECT age FROM users WHERE email = %s", (unique_email,))
+        self.assertIn("35", verify)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = %s", (unique_email,))
 
 
 if __name__ == '__main__':

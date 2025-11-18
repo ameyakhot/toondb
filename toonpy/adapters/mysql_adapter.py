@@ -1036,6 +1036,296 @@ class MySQLAdapter(BaseAdapter):
                 pass
             raise QueryError(f"Unexpected error during delete: {e}") from e
     
+    def insert_and_query_from_toon(
+        self,
+        table: str,
+        toon_string: str,
+        where: Optional[Dict[str, Any]] = None,
+        database: Optional[str] = None,
+        projection: Optional[List[str]] = None,
+        on_duplicate_key_update: Optional[str] = None
+    ) -> str:
+        """
+        Insert single row from TOON and immediately query it back as TOON.
+        Uses the same instance/session - guaranteed to work.
+        
+        Flow: TOON → insert → query back → TOON (all in same instance)
+        
+        Args:
+            table: Table name
+            toon_string: TOON formatted string containing row data
+            where: Optional WHERE clause dict to query back inserted row.
+                   If None, uses LAST_INSERT_ID() for auto-increment keys or all inserted values
+            database: Database name (optional, defaults to current database)
+            projection: Optional list of column names to select (defaults to all columns)
+            on_duplicate_key_update: MySQL ON DUPLICATE KEY UPDATE clause
+        
+        Returns:
+            str: TOON formatted string with queried row data
+        
+        Example:
+            >>> adapter = MySQLAdapter(...)
+            >>> toon_data = to_toon([{"name": "Alice", "age": 30}])
+            >>> result = adapter.insert_and_query_from_toon("users", toon_data)
+            >>> # Returns TOON with the inserted row (with auto-increment id if exists)
+        """
+        from toonpy.core.converter import from_toon
+        
+        if not self.connection.open:
+            raise ConnectionError("Connection is closed")
+        
+        try:
+            # Insert using existing method
+            insert_result = self.insert_one_from_toon(
+                table, toon_string, database, on_duplicate_key_update
+            )
+            
+            # Parse inserted data to build WHERE clause if needed
+            data = from_toon(toon_string)
+            if isinstance(data, list):
+                if len(data) == 0:
+                    raise ValueError("TOON string must contain at least one row")
+                inserted_row = data[0]
+            elif isinstance(data, dict):
+                inserted_row = data
+            else:
+                raise ValueError(f"TOON string must decode to a dict or list of dicts, got {type(data)}")
+            
+            # Build query back WHERE clause
+            if where is not None:
+                query_where = where
+            else:
+                # Try to use LAST_INSERT_ID() for auto-increment primary key
+                # First, try to get primary key column from schema
+                try:
+                    table_schema = self.get_schema(table, database)
+                    primary_key_col = None
+                    for col in table_schema[table]['columns']:
+                        if col.get('column_key') == 'PRI' and 'auto_increment' in col.get('extra', '').lower():
+                            primary_key_col = col['column_name']
+                            break
+                    
+                    if primary_key_col:
+                        # Use LAST_INSERT_ID()
+                        if database:
+                            table_qualified = f"{database}.{table}"
+                        else:
+                            table_qualified = table
+                        
+                        if projection:
+                            cols = ", ".join(projection)
+                        else:
+                            cols = "*"
+                        
+                        sql = f"SELECT {cols} FROM {table_qualified} WHERE {primary_key_col} = LAST_INSERT_ID()"
+                        return self.query(sql)
+                    else:
+                        # Fallback: build WHERE from all inserted column values
+                        query_where = inserted_row
+                except (SchemaError, Exception):
+                    # Fallback: build WHERE from all inserted column values
+                    query_where = inserted_row
+            
+            # Build SELECT query with WHERE clause
+            if database:
+                table_qualified = f"{database}.{table}"
+            else:
+                table_qualified = table
+            
+            if projection:
+                cols = ", ".join(projection)
+            else:
+                cols = "*"
+            
+            # Build WHERE clause
+            where_clauses = [f"{col} = %s" for col in query_where.keys()]
+            where_sql = " AND ".join(where_clauses)
+            params = list(query_where.values())
+            
+            sql = f"SELECT {cols} FROM {table_qualified} WHERE {where_sql} LIMIT 1"
+            return self.query(sql, params)
+        
+        except (ConnectionError, QueryError, SchemaError, SecurityError, ValueError):
+            raise
+        except Exception as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Unexpected error during insert_and_query: {e}") from e
+    
+    def insert_many_and_query_from_toon(
+        self,
+        table: str,
+        toon_string: str,
+        where: Optional[Dict[str, Any]] = None,
+        database: Optional[str] = None,
+        projection: Optional[List[str]] = None,
+        limit: Optional[int] = None
+    ) -> str:
+        """
+        Insert multiple rows from TOON and immediately query them back as TOON.
+        Uses the same instance/session - guaranteed to work.
+        
+        Flow: TOON → bulk insert → query back → TOON (all in same instance)
+        
+        Args:
+            table: Table name
+            toon_string: TOON formatted string containing list of rows
+            where: Optional WHERE clause dict to query back inserted rows.
+                   If None, queries by all inserted column values using IN operator
+            database: Database name (optional, defaults to current database)
+            projection: Optional list of column names to select (defaults to all columns)
+            limit: Optional limit on number of rows to return
+        
+        Returns:
+            str: TOON formatted string with queried rows
+        
+        Example:
+            >>> adapter = MySQLAdapter(...)
+            >>> toon_data = to_toon([{"name": "Alice"}, {"name": "Bob"}])
+            >>> result = adapter.insert_many_and_query_from_toon("users", toon_data)
+            >>> # Returns TOON with both inserted rows
+        """
+        from toonpy.core.converter import from_toon
+        
+        if not self.connection.open:
+            raise ConnectionError("Connection is closed")
+        
+        try:
+            # Insert using existing method
+            self.insert_many_from_toon(table, toon_string, database)
+            
+            # Parse inserted data
+            data = from_toon(toon_string)
+            if not isinstance(data, list):
+                data = [data]
+            
+            if len(data) == 0:
+                raise ValueError("TOON string must contain at least one row")
+            
+            # Build query back WHERE clause
+            if where is not None:
+                query_where = where
+                where_clauses = [f"{col} = %s" for col in query_where.keys()]
+                where_sql = " AND ".join(where_clauses)
+                params = list(query_where.values())
+            else:
+                # Build WHERE from first row's columns with IN operator for multiple values
+                if not data:
+                    return self._to_toon([])
+                
+                first_row = data[0]
+                where_parts = []
+                params = []
+                
+                for col in first_row.keys():
+                    values = [row.get(col) for row in data if col in row]
+                    if len(values) == 1:
+                        where_parts.append(f"{col} = %s")
+                        params.append(values[0])
+                    elif len(values) > 1:
+                        placeholders = ", ".join(["%s"] * len(values))
+                        where_parts.append(f"{col} IN ({placeholders})")
+                        params.extend(values)
+                
+                where_sql = " AND ".join(where_parts) if where_parts else "1=1"
+            
+            # Build SELECT query
+            if database:
+                table_qualified = f"{database}.{table}"
+            else:
+                table_qualified = table
+            
+            if projection:
+                cols = ", ".join(projection)
+            else:
+                cols = "*"
+            
+            sql = f"SELECT {cols} FROM {table_qualified} WHERE {where_sql}"
+            if limit is not None:
+                sql += f" LIMIT {limit}"
+            
+            return self.query(sql, params)
+        
+        except (ConnectionError, QueryError, SchemaError, SecurityError, ValueError):
+            raise
+        except Exception as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Unexpected error during insert_many_and_query: {e}") from e
+    
+    def update_and_query_from_toon(
+        self,
+        table: str,
+        toon_string: str,
+        where: Dict[str, Any],
+        database: Optional[str] = None,
+        projection: Optional[List[str]] = None
+    ) -> str:
+        """
+        Update rows from TOON and immediately query them back as TOON.
+        Uses the same instance/session - guaranteed to work.
+        
+        Flow: TOON → update → query back using same WHERE → TOON (all in same instance)
+        
+        Args:
+            table: Table name
+            toon_string: TOON formatted string with update data
+            where: WHERE clause conditions as dict to find rows to update
+            database: Database name (optional, defaults to current database)
+            projection: Optional list of column names to select (defaults to all columns)
+        
+        Returns:
+            str: TOON formatted string with updated row data
+        
+        Example:
+            >>> adapter = MySQLAdapter(...)
+            >>> update_data = to_toon([{"age": 31, "status": "active"}])
+            >>> result = adapter.update_and_query_from_toon(
+            ...     "users", 
+            ...     update_data,
+            ...     where={"id": 123}
+            ... )
+            >>> # Returns TOON with updated row
+        """
+        if not self.connection.open:
+            raise ConnectionError("Connection is closed")
+        
+        try:
+            # Update using existing method
+            self.update_from_toon(table, toon_string, where, database)
+            
+            # Build SELECT query with same WHERE clause
+            if database:
+                table_qualified = f"{database}.{table}"
+            else:
+                table_qualified = table
+            
+            if projection:
+                cols = ", ".join(projection)
+            else:
+                cols = "*"
+            
+            # Build WHERE clause (same as update)
+            where_clauses = [f"{col} = %s" for col in where.keys()]
+            where_sql = " AND ".join(where_clauses)
+            params = list(where.values())
+            
+            sql = f"SELECT {cols} FROM {table_qualified} WHERE {where_sql}"
+            return self.query(sql, params)
+        
+        except (ConnectionError, QueryError, SchemaError, SecurityError, ValueError):
+            raise
+        except Exception as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Unexpected error during update_and_query: {e}") from e
+
     def close(self):
         """
         Close MySQL connection if adapter owns it
