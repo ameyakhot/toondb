@@ -128,6 +128,91 @@ class TestPostgresAdapterUnit(unittest.TestCase):
             adapter.query("INVALID SQL")
         adapter.close()
     
+    @patch('psycopg2.connect')
+    def test_query_with_params_tuple(self, mock_connect):
+        """Test parameterized query with tuple parameters"""
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.description = [('name',), ('age',)]
+        mock_cursor.fetchall.return_value = [
+            {'name': 'Alice', 'age': 30}
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        result = adapter.query("SELECT name, age FROM users WHERE id = %s", (123,))
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("alice", result.lower())
+        # Verify parameterized query was called
+        mock_cursor.execute.assert_called_once_with("SELECT name, age FROM users WHERE id = %s", (123,))
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_query_with_params_dict(self, mock_connect):
+        """Test parameterized query with dict parameters"""
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.description = [('name',), ('age',)]
+        mock_cursor.fetchall.return_value = [
+            {'name': 'Bob', 'age': 25}
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        params = {'user_id': 123, 'min_age': 20}
+        result = adapter.query("SELECT name, age FROM users WHERE id = %(user_id)s AND age > %(min_age)s", params)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("bob", result.lower())
+        mock_cursor.execute.assert_called_once_with(
+            "SELECT name, age FROM users WHERE id = %(user_id)s AND age > %(min_age)s", 
+            params
+        )
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_query_with_params_list(self, mock_connect):
+        """Test parameterized query with list parameters"""
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.description = [('name',)]
+        mock_cursor.fetchall.return_value = [
+            {'name': 'Charlie'}
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        result = adapter.query("SELECT name FROM users WHERE id = %s", [456])
+        
+        self.assertIsInstance(result, str)
+        mock_cursor.execute.assert_called_once_with("SELECT name FROM users WHERE id = %s", [456])
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_execute_with_params(self, mock_connect):
+        """Test execute method with parameters"""
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.description = [('count',)]
+        mock_cursor.fetchall.return_value = [{'count': 5}]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        result = adapter.execute("SELECT COUNT(*) as count FROM users WHERE age > %s", (30,))
+        
+        self.assertIsInstance(result, str)
+        mock_cursor.execute.assert_called_once_with("SELECT COUNT(*) as count FROM users WHERE age > %s", (30,))
+        adapter.close()
+    
     def test_clean_value_decimal(self):
         """Test cleaning Decimal values"""
         # Create a mock connection that passes validation

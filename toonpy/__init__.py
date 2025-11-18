@@ -12,11 +12,12 @@ from toonpy.adapters.exceptions import (
     ToonDBError,
     ConnectionError,
     QueryError,
-    SchemaError
+    SchemaError,
+    SecurityError
 )
 from toonpy.core.converter import to_toon, from_toon
 
-__version__ = "0.2.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "connect",
@@ -27,6 +28,7 @@ __all__ = [
     "ConnectionError",
     "QueryError",
     "SchemaError",
+    "SecurityError",
     "to_toon",
     "from_toon",
 ]

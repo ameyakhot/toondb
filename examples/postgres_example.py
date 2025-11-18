@@ -69,10 +69,54 @@ def example_connection_params():
         adapter.close()
 
 
+def example_parameterized_queries():
+    """Example: Parameterized queries (recommended for security)"""
+    print("=" * 60)
+    print("Example 4: Parameterized Queries (Security Best Practice)")
+    print("=" * 60)
+    
+    adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+    
+    try:
+        # ✅ Safe: Parameterized query with tuple
+        print("1. Parameterized query with tuple (recommended):")
+        user_id = 1
+        result = adapter.query("SELECT name, email, age FROM users WHERE id = %s", (user_id,))
+        print(result)
+        print()
+        
+        # ✅ Safe: Parameterized query with multiple parameters
+        print("2. Parameterized query with multiple parameters:")
+        min_age = 30
+        role = "admin"
+        result = adapter.query(
+            "SELECT name, age, role FROM users WHERE age > %s AND role = %s",
+            (min_age, role)
+        )
+        print(result)
+        print()
+        
+        # ✅ Safe: Parameterized query with dict parameters
+        print("3. Parameterized query with dict parameters:")
+        params = {"min_age": 25, "max_age": 35}
+        result = adapter.query(
+            "SELECT name, age FROM users WHERE age BETWEEN %(min_age)s AND %(max_age)s",
+            params
+        )
+        print(result)
+        print()
+        
+        print("Note: Always use parameterized queries when including user input!")
+        print("This prevents SQL injection attacks.")
+        print()
+    finally:
+        adapter.close()
+
+
 def example_select_queries():
     """Example: Various SELECT queries"""
     print("=" * 60)
-    print("Example 4: SELECT Queries")
+    print("Example 5: SELECT Queries")
     print("=" * 60)
     
     adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
@@ -117,7 +161,7 @@ def example_select_queries():
 def example_non_select_queries():
     """Example: Non-SELECT queries (INSERT, UPDATE, DELETE)"""
     print("=" * 60)
-    print("Example 5: Non-SELECT Queries")
+    print("Example 6: Non-SELECT Queries")
     print("=" * 60)
     
     adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
@@ -160,7 +204,7 @@ def example_non_select_queries():
 def example_schema_discovery():
     """Example: Schema discovery"""
     print("=" * 60)
-    print("Example 6: Schema Discovery")
+    print("Example 7: Schema Discovery")
     print("=" * 60)
     
     adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
@@ -194,7 +238,7 @@ def example_schema_discovery():
 def example_error_handling():
     """Example: Error handling"""
     print("=" * 60)
-    print("Example 7: Error Handling")
+    print("Example 8: Error Handling")
     print("=" * 60)
     
     # Connection error
@@ -233,7 +277,7 @@ def example_error_handling():
 def example_empty_results():
     """Example: Handling empty result sets"""
     print("=" * 60)
-    print("Example 8: Empty Result Sets")
+    print("Example 9: Empty Result Sets")
     print("=" * 60)
     
     adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
@@ -257,6 +301,7 @@ if __name__ == "__main__":
         example_connection_string()
         example_connection_object()
         example_connection_params()
+        example_parameterized_queries()
         example_select_queries()
         example_non_select_queries()
         example_schema_discovery()

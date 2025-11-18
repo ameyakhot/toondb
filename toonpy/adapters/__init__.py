@@ -6,7 +6,8 @@ from toonpy.adapters.exceptions import (
     ToonDBError,
     ConnectionError,
     QueryError,
-    SchemaError
+    SchemaError,
+    SecurityError
 )
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "ConnectionError",
     "QueryError",
     "SchemaError",
+    "SecurityError",
 ]
 

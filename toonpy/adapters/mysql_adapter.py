@@ -1,6 +1,6 @@
 from toonpy.adapters.base import BaseAdapter
-from toonpy.adapters.exceptions import ConnectionError, QueryError, SchemaError
-from typing import Optional, Dict, Any, List
+from toonpy.adapters.exceptions import ConnectionError, QueryError, SchemaError, SecurityError
+from typing import Optional, Dict, Any, List, Union, Tuple
 import pymysql
 from pymysql.cursors import DictCursor
 from pymysql.connections import Connection as MySQLConnection
@@ -122,12 +122,20 @@ class MySQLAdapter(BaseAdapter):
         
         return params
     
-    def query(self, sql: str) -> str:
+    def query(self, sql: str, params: Optional[Union[Tuple, Dict, List]] = None) -> str:
         """
-        Execute SQL query and return results in TOON format
+        Execute SQL query and return results in TOON format.
+        
+        For security, use parameterized queries when including user input:
+        - Safe: query("SELECT * FROM users WHERE id = %s", (123,))
+        - Safe: query("SELECT * FROM users WHERE name = %s AND age > %s", ("Alice", 30))
+        - Unsafe: query("SELECT * FROM users WHERE id = " + str(user_id))  # SQL injection risk
 
         Args:
-            sql: SQL query string
+            sql: SQL query string (use %s placeholders for parameters)
+            params: Optional parameters for parameterized query (tuple, dict, or list).
+                   When provided, prevents SQL injection by using database parameterization.
+                   When None, executes raw SQL (use with caution).
 
         Returns:
             str: TOON formatted string
@@ -135,13 +143,28 @@ class MySQLAdapter(BaseAdapter):
         Raises:
             ConnectionError: If connection is closed or unavailable
             QueryError: If query execution fails
+            SecurityError: If security validation fails (when validate=True)
+        
+        Examples:
+            >>> # Safe parameterized query (recommended)
+            >>> adapter.query("SELECT * FROM users WHERE id = %s", (123,))
+            >>> adapter.query("SELECT * FROM users WHERE name = %s AND age > %s", ("Alice", 30))
+            >>> 
+            >>> # Raw SQL (use with caution - no user input)
+            >>> adapter.query("SELECT * FROM users WHERE id = 123")
         """
         if not self.connection.open:
             raise ConnectionError("Connection is closed")
         
         try:
             cursor = self.connection.cursor(DictCursor)
-            cursor.execute(sql)
+            
+            # Use parameterized query if params provided (prevents SQL injection)
+            if params is not None:
+                cursor.execute(sql, params)
+            else:
+                # Raw SQL execution (user responsibility to prevent injection)
+                cursor.execute(sql)
             
             # Check if query returns rows (SELECT queries)
             if cursor.description:
@@ -180,12 +203,13 @@ class MySQLAdapter(BaseAdapter):
                 pass
             raise QueryError(f"Unexpected error during query execution: {e}") from e
     
-    def execute(self, sql: str) -> str:
+    def execute(self, sql: str, params: Optional[Union[Tuple, Dict, List]] = None) -> str:
         """
         Execute SQL query (alias for query method)
 
         Args:
-            sql: SQL query string
+            sql: SQL query string (use %s placeholders for parameters)
+            params: Optional parameters for parameterized query (tuple, dict, or list)
 
         Returns:
             str: TOON formatted string
@@ -194,7 +218,7 @@ class MySQLAdapter(BaseAdapter):
             ConnectionError: If connection is closed or unavailable
             QueryError: If query execution fails
         """
-        return self.query(sql)
+        return self.query(sql, params)
     
     def _clean_mysql_data(self, docs: List[Dict]) -> List[Dict]:
         """

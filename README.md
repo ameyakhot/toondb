@@ -376,23 +376,41 @@ conn = psycopg2.connect("postgresql://...")
 adapter = PostgresAdapter(connection=conn)
 ```
 
-#### `query(sql: str) -> str`
+#### `query(sql: str, params: Optional[Union[tuple, dict, list]] = None) -> str`
 
 Execute SQL query and return results in TOON format.
 
 **Parameters:**
-- `sql`: SQL query string
+- `sql`: SQL query string (use `%s` placeholders for parameters)
+- `params`: Optional parameters for parameterized query (tuple, dict, or list). When provided, prevents SQL injection by using database parameterization.
 
 **Returns:** TOON formatted string
 
-**Example:**
+**Security Note:** Always use parameterized queries when including user input to prevent SQL injection attacks.
+
+**Examples:**
 ```python
+# ✅ Safe: Parameterized query (recommended)
+toon_result = adapter.query("SELECT name, age FROM users WHERE id = %s", (123,))
+toon_result = adapter.query("SELECT * FROM users WHERE name = %s AND age > %s", ("Alice", 30))
+
+# ✅ Safe: Parameterized query with dict parameters
+toon_result = adapter.query(
+    "SELECT * FROM users WHERE id = %(user_id)s AND age > %(min_age)s",
+    {"user_id": 123, "min_age": 20}
+)
+
+# ⚠️ Use with caution: Raw SQL (only for trusted, static queries)
 toon_result = adapter.query("SELECT name, age FROM users WHERE age > 30")
+
+# ❌ Unsafe: String concatenation (SQL injection risk)
+user_id = "123; DROP TABLE users; --"
+toon_result = adapter.query(f"SELECT * FROM users WHERE id = {user_id}")  # DON'T DO THIS
 ```
 
-#### `execute(sql: str) -> str`
+#### `execute(sql: str, params: Optional[Union[tuple, dict, list]] = None) -> str`
 
-Alias for `query()` method.
+Alias for `query()` method. Supports the same parameterized query syntax.
 
 #### `get_schema(table=None, schema='public') -> Dict`
 
@@ -438,18 +456,37 @@ adapter = MySQLAdapter(connection_string="mysql://user:pass@localhost:3306/mydb"
 adapter = MySQLAdapter(host="localhost", port=3306, user="user", password="pass", database="mydb")
 ```
 
-#### `query(sql: str) -> str`
+#### `query(sql: str, params: Optional[Union[tuple, dict, list]] = None) -> str`
 
 Execute SQL query and return results in TOON format.
 
 **Parameters:**
-- `sql`: SQL query string
+- `sql`: SQL query string (use `%s` placeholders for parameters)
+- `params`: Optional parameters for parameterized query (tuple, dict, or list). When provided, prevents SQL injection by using database parameterization.
 
 **Returns:** TOON formatted string
 
-#### `execute(sql: str) -> str`
+**Security Note:** Always use parameterized queries when including user input to prevent SQL injection attacks.
 
-Alias for `query()` method.
+**Examples:**
+```python
+# ✅ Safe: Parameterized query (recommended)
+toon_result = adapter.query("SELECT name, email FROM users WHERE id = %s", (123,))
+toon_result = adapter.query("SELECT * FROM users WHERE name = %s AND age > %s", ("Alice", 30))
+
+# ✅ Safe: Parameterized query with dict parameters
+toon_result = adapter.query(
+    "SELECT * FROM users WHERE id = %(user_id)s AND age > %(min_age)s",
+    {"user_id": 123, "min_age": 20}
+)
+
+# ⚠️ Use with caution: Raw SQL (only for trusted, static queries)
+toon_result = adapter.query("SELECT name, email FROM users LIMIT 5")
+```
+
+#### `execute(sql: str, params: Optional[Union[tuple, dict, list]] = None) -> str`
+
+Alias for `query()` method. Supports the same parameterized query syntax.
 
 #### `get_schema(table=None, database=None) -> Dict`
 
@@ -585,6 +622,47 @@ decoded_data = from_toon(toon_string)
 - **Data Analysis**: Pass structured data to AI models with reduced token costs
 - **Fine-tuning**: Prepare training data in token-efficient format
 - **API Responses**: Return data in TOON format for LLM consumption
+
+## Security Best Practices
+
+### SQL Injection Prevention
+
+**Always use parameterized queries when including user input:**
+
+```python
+# ✅ Safe: Parameterized query
+adapter.query("SELECT * FROM users WHERE id = %s", (user_id,))
+adapter.query("SELECT * FROM users WHERE name = %s AND age > %s", (name, min_age))
+
+# ❌ Unsafe: String concatenation (SQL injection risk)
+adapter.query(f"SELECT * FROM users WHERE id = {user_id}")  # DON'T DO THIS
+adapter.query("SELECT * FROM users WHERE id = " + str(user_id))  # DON'T DO THIS
+```
+
+### Key Security Points
+
+1. **Use Parameterized Queries**: The `params` argument prevents SQL injection by using database-level parameterization
+2. **Never Concatenate User Input**: Always use the `params` argument for any user-provided values
+3. **Validate Input**: Validate and sanitize user input before passing to queries
+4. **Principle of Least Privilege**: Use database users with minimal required permissions
+5. **Connection Security**: Use encrypted connections (SSL/TLS) in production
+
+### Example: Secure User Lookup
+
+```python
+from toonpy import connect
+
+# Connect to database
+adapter = connect("postgresql://user:pass@localhost:5432/mydb")
+
+# ✅ Safe: Parameterized query
+def get_user(user_id: int):
+    return adapter.query("SELECT * FROM users WHERE id = %s", (user_id,))
+
+# ❌ Unsafe: String formatting
+def get_user_unsafe(user_id: int):
+    return adapter.query(f"SELECT * FROM users WHERE id = {user_id}")  # VULNERABLE
+```
 
 ## Requirements
 

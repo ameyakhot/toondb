@@ -22,3 +22,8 @@ class SchemaError(ToonDBError):
     """Raised when there are schema discovery errors"""
     pass
 
+
+class SecurityError(ToonDBError):
+    """Raised when security-related issues are detected (e.g., SQL injection attempts)"""
+    pass
+

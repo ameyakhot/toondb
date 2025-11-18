@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "toonpy"
-version = "0.2.0"
+name = "toondb"
+version = "0.1.1"
 description = "Multi-database adapter library that converts query results to TOON format for efficient LLM usage"
 readme = "README.md"
 requires-python = ">=3.8"

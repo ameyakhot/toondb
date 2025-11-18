@@ -8,8 +8,8 @@ except FileNotFoundError:
     long_description = ""
 
 setup(
-    name="toonpy",
-    version="0.2.0",
+    name="toondb",
+    version="0.1.1",
     author="Ameya Khot",
     author_email="ameyakhot18@gmail.com",
     description="Multi-database adapter library that converts query results to TOON format for efficient LLM usage",
