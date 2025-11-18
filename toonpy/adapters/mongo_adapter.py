@@ -2,7 +2,7 @@ from toonpy.adapters.base import BaseAdapter
 from typing import Union, Optional, Dict, Any, List
 from pymongo import MongoClient
 from bson import ObjectId
-from datetime import datetime, date
+from datetime import datetime, date, time
 import json
 
 
@@ -639,20 +639,42 @@ class MongoAdapter(BaseAdapter):
         }
         return self._to_toon([result_dict])
     
+    def _clean_value(self, value: Any) -> Any:
+        """
+        Clean a single value, handling nested structures recursively
+        
+        Args:
+            value: Value to clean
+        
+        Returns:
+            Cleaned value
+        """
+        if value is None:
+            return None
+        elif isinstance(value, ObjectId):
+            return str(value)
+        elif isinstance(value, (datetime, date, time)):
+            return value.isoformat()
+        elif isinstance(value, (list, tuple)):
+            # Recursively clean list/tuple items
+            return [self._clean_value(item) for item in value]
+        elif isinstance(value, dict):
+            # Recursively clean dictionary values
+            return {k: self._clean_value(v) for k, v in value.items()}
+        elif isinstance(value, (int, float, str, bool)):
+            return value
+        else:
+            # Fallback for unknown types
+            return str(value)
+    
     def _clean_mongo_docs(self, docs: List[Dict]) -> List[Dict]:
         """
         Convert MongoDB documents to JSON-serializable format
+        Uses recursive cleaning to handle nested structures
         """
         cleaned = []
         for doc in docs:
-            cleaned_doc = {}
-            for key, value in doc.items():
-                if isinstance(value, ObjectId):
-                    cleaned_doc[key] = str(value)
-                elif isinstance(value, (datetime, date)):
-                    cleaned_doc[key] = value.isoformat()
-                else:
-                    cleaned_doc[key] = value
+            cleaned_doc = {k: self._clean_value(v) for k, v in doc.items()}
             cleaned.append(cleaned_doc)
         return cleaned
     
