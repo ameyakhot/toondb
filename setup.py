@@ -9,7 +9,7 @@ except FileNotFoundError:
 
 setup(
     name="toondb",
-    version="0.1.6",
+    version="0.1.7",
     author="Ameya Khot",
     author_email="ameyakhot18@gmail.com",
     description="Multi-database adapter library that converts query results to TOON format for efficient LLM usage",
