@@ -41,6 +41,7 @@ The TOON format uses 30-50% fewer tokens while maintaining the same information.
 - **Easy Integration**: Simple adapter pattern - connect and query as usual
 - **Python-First**: Clean, intuitive API designed for Python developers
 - **Bidirectional Conversion**: Encode to TOON, decode back to Python data structures
+- **TOON-to-TOON Round-Trips**: Insert/update data from TOON and immediately query it back in the same session
 
 ## Installation
 
@@ -440,6 +441,74 @@ List all tables in the database.
 
 Close PostgreSQL connection if adapter owns it.
 
+#### `insert_and_query_from_toon(table: str, toon_string: str, where: Optional[Dict] = None, schema: str = 'public', projection: Optional[List[str]] = None, on_conflict: Optional[str] = None) -> str`
+
+Insert single row from TOON and immediately query it back as TOON. Uses the same instance/session - guaranteed to work.
+
+**Parameters:**
+- `table`: Table name
+- `toon_string`: TOON formatted string containing row data
+- `where`: Optional WHERE clause dict to query back inserted row. If None, uses RETURNING clause to get inserted ID or all inserted values
+- `schema`: Schema name (default: 'public')
+- `projection`: Optional list of column names to select (defaults to all columns)
+- `on_conflict`: PostgreSQL ON CONFLICT clause
+
+**Returns:** TOON formatted string with queried row data
+
+**Example:**
+```python
+from toonpy import PostgresAdapter, to_toon
+
+adapter = PostgresAdapter(connection_string="postgresql://...")
+document = {"name": "Alice", "age": 30}
+toon_string = to_toon([document])
+result = adapter.insert_and_query_from_toon("users", toon_string)
+# Returns TOON with the inserted row (with id if exists)
+```
+
+#### `insert_many_and_query_from_toon(table: str, toon_string: str, where: Optional[Dict] = None, schema: str = 'public', projection: Optional[List[str]] = None, limit: Optional[int] = None) -> str`
+
+Insert multiple rows from TOON and immediately query them back as TOON. Uses the same instance/session - guaranteed to work.
+
+**Parameters:**
+- `table`: Table name
+- `toon_string`: TOON formatted string containing list of rows
+- `where`: Optional WHERE clause dict to query back inserted rows. If None, queries by all inserted column values using IN operator
+- `schema`: Schema name (default: 'public')
+- `projection`: Optional list of column names to select (defaults to all columns)
+- `limit`: Optional limit on number of rows to return
+
+**Returns:** TOON formatted string with queried rows
+
+**Example:**
+```python
+documents = [{"name": "Alice"}, {"name": "Bob"}]
+toon_string = to_toon(documents)
+result = adapter.insert_many_and_query_from_toon("users", toon_string)
+# Returns TOON with both inserted rows
+```
+
+#### `update_and_query_from_toon(table: str, toon_string: str, where: Dict[str, Any], schema: str = 'public', projection: Optional[List[str]] = None) -> str`
+
+Update rows from TOON and immediately query them back as TOON. Uses the same instance/session - guaranteed to work.
+
+**Parameters:**
+- `table`: Table name
+- `toon_string`: TOON formatted string with update data
+- `where`: WHERE clause conditions as dict to find rows to update
+- `schema`: Schema name (default: 'public')
+- `projection`: Optional list of column names to select (defaults to all columns)
+
+**Returns:** TOON formatted string with updated row data
+
+**Example:**
+```python
+update_data = {"age": 31, "status": "active"}
+toon_string = to_toon([update_data])
+result = adapter.update_and_query_from_toon("users", toon_string, where={"id": 123})
+# Returns TOON with updated row
+```
+
 ### MySQLAdapter
 
 #### `__init__(connection_string=None, connection=None, **kwargs)`
@@ -515,6 +584,74 @@ List all tables in the database.
 #### `close()`
 
 Close MySQL connection if adapter owns it.
+
+#### `insert_and_query_from_toon(table: str, toon_string: str, where: Optional[Dict] = None, database: Optional[str] = None, projection: Optional[List[str]] = None, on_duplicate_key_update: Optional[str] = None) -> str`
+
+Insert single row from TOON and immediately query it back as TOON. Uses the same instance/session - guaranteed to work.
+
+**Parameters:**
+- `table`: Table name
+- `toon_string`: TOON formatted string containing row data
+- `where`: Optional WHERE clause dict to query back inserted row. If None, uses LAST_INSERT_ID() for auto-increment keys or all inserted values
+- `database`: Database name (optional, defaults to current database)
+- `projection`: Optional list of column names to select (defaults to all columns)
+- `on_duplicate_key_update`: MySQL ON DUPLICATE KEY UPDATE clause
+
+**Returns:** TOON formatted string with queried row data
+
+**Example:**
+```python
+from toonpy import MySQLAdapter, to_toon
+
+adapter = MySQLAdapter(connection_string="mysql://...")
+document = {"name": "Alice", "age": 30}
+toon_string = to_toon([document])
+result = adapter.insert_and_query_from_toon("users", toon_string)
+# Returns TOON with the inserted row (with auto-increment id if exists)
+```
+
+#### `insert_many_and_query_from_toon(table: str, toon_string: str, where: Optional[Dict] = None, database: Optional[str] = None, projection: Optional[List[str]] = None, limit: Optional[int] = None) -> str`
+
+Insert multiple rows from TOON and immediately query them back as TOON. Uses the same instance/session - guaranteed to work.
+
+**Parameters:**
+- `table`: Table name
+- `toon_string`: TOON formatted string containing list of rows
+- `where`: Optional WHERE clause dict to query back inserted rows. If None, queries by all inserted column values using IN operator
+- `database`: Database name (optional, defaults to current database)
+- `projection`: Optional list of column names to select (defaults to all columns)
+- `limit`: Optional limit on number of rows to return
+
+**Returns:** TOON formatted string with queried rows
+
+**Example:**
+```python
+documents = [{"name": "Alice"}, {"name": "Bob"}]
+toon_string = to_toon(documents)
+result = adapter.insert_many_and_query_from_toon("users", toon_string)
+# Returns TOON with both inserted rows
+```
+
+#### `update_and_query_from_toon(table: str, toon_string: str, where: Dict[str, Any], database: Optional[str] = None, projection: Optional[List[str]] = None) -> str`
+
+Update rows from TOON and immediately query them back as TOON. Uses the same instance/session - guaranteed to work.
+
+**Parameters:**
+- `table`: Table name
+- `toon_string`: TOON formatted string with update data
+- `where`: WHERE clause conditions as dict to find rows to update
+- `database`: Database name (optional, defaults to current database)
+- `projection`: Optional list of column names to select (defaults to all columns)
+
+**Returns:** TOON formatted string with updated row data
+
+**Example:**
+```python
+update_data = {"age": 31, "status": "active"}
+toon_string = to_toon([update_data])
+result = adapter.update_and_query_from_toon("users", toon_string, where={"id": 123})
+# Returns TOON with updated row
+```
 
 ### MongoAdapter
 
@@ -739,7 +876,17 @@ MIT License
 
 ## Changelog
 
-### 0.2.0 (Current)
+### 0.1.5 (Current)
+
+- **TOON-to-TOON Round-Trip Methods** - New methods for MySQL and PostgreSQL adapters that ensure session continuity
+  - `insert_and_query_from_toon()` - Insert and immediately query back in same session
+  - `insert_many_and_query_from_toon()` - Bulk insert and query back in same session
+  - `update_and_query_from_toon()` - Update and query back in same session
+- **Session Continuity** - All round-trip methods use the same adapter instance, solving the "session is over" problem
+- **Smart Primary Key Detection** - MySQL uses LAST_INSERT_ID() and PostgreSQL uses RETURNING clause when available
+- **Comprehensive Testing** - Added unit and integration tests for all new methods
+
+### 0.1.4
 
 - **PostgreSQL adapter** - Full support with schema discovery
 - **MySQL adapter** - Full support with schema discovery
