@@ -58,6 +58,51 @@ uv pip install toonpy
 
 ## Quick Start
 
+### Unified Connection (Recommended)
+
+The easiest way to connect to any database is using the unified `connect()` function, which auto-detects the database type:
+
+```python
+from toonpy import connect
+
+# PostgreSQL - auto-detected from connection string
+adapter = connect("postgresql://user:pass@localhost:5432/mydb")
+toon_result = adapter.query("SELECT name, age FROM users WHERE age > 30")
+adapter.close()
+
+# MySQL - auto-detected
+adapter = connect("mysql://user:pass@localhost:3306/mydb")
+toon_result = adapter.query("SELECT name, email FROM users LIMIT 5")
+adapter.close()
+
+# MongoDB - requires database and collection_name
+adapter = connect("mongodb://localhost:27017", database="mydb", collection_name="users")
+toon_result = adapter.find({"age": {"$gt": 30}})
+adapter.close()
+```
+
+The `connect()` function automatically detects the database type from the connection string prefix:
+- `postgresql://` or `postgres://` → PostgreSQL
+- `mysql://` or `mysql+pymysql://` → MySQL
+- `mongodb://` or `mongodb+srv://` → MongoDB
+
+You can also specify the database type explicitly:
+
+```python
+# Explicit type specification
+adapter = connect("some://url", db_type="postgresql")
+
+# Individual parameters
+adapter = connect(
+    db_type="postgresql",
+    host="localhost",
+    port=5432,
+    user="user",
+    password="pass",
+    database="mydb"
+)
+```
+
 ### PostgreSQL Example
 
 Connect to your PostgreSQL database and convert query results to TOON format:
@@ -136,6 +181,44 @@ decoded_data = from_toon(toon_string)
 ```
 
 ## Usage
+
+### Unified Connection Function
+
+The `connect()` function provides a single interface for connecting to all supported databases:
+
+```python
+from toonpy import connect
+
+# Auto-detection from connection string
+adapter = connect("postgresql://user:pass@localhost:5432/mydb")
+adapter = connect("mysql://user:pass@localhost:3306/mydb")
+adapter = connect("mongodb://localhost:27017", database="mydb", collection_name="users")
+
+# Explicit type specification
+adapter = connect("custom://url", db_type="postgresql")
+
+# Individual parameters
+adapter = connect(
+    db_type="postgresql",
+    host="localhost",
+    port=5432,
+    user="user",
+    password="pass",
+    database="mydb"
+)
+```
+
+**Error Handling:** If you provide an unrecognized connection string, `connect()` will provide helpful error messages with suggestions. For example:
+
+```python
+# SQLite (not supported)
+connect("sqlite:///db.db")
+# Error: SQLite is not currently supported. Supported databases: PostgreSQL, MySQL, MongoDB
+
+# Missing protocol
+connect("localhost:5432/mydb")
+# Error: Connection string appears to be missing a protocol prefix...
+```
 
 ### PostgreSQL Adapter
 
