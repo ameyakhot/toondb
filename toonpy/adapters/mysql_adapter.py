@@ -1,17 +1,17 @@
-from toondb.adapters.base import BaseAdapter
-from toondb.adapters.exceptions import ConnectionError, QueryError, SchemaError
+from toonpy.adapters.base import BaseAdapter
+from toonpy.adapters.exceptions import ConnectionError, QueryError, SchemaError
 from typing import Optional, Dict, Any, List
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from psycopg2.extensions import connection as PgConnection
+import pymysql
+from pymysql.cursors import DictCursor
+from pymysql.connections import Connection as MySQLConnection
 from datetime import datetime, date, time
 from decimal import Decimal
-import uuid
 import base64
+import re
 
 
-class PostgresAdapter(BaseAdapter):
-    """Adapter for PostgreSQL databases"""
+class MySQLAdapter(BaseAdapter):
+    """Adapter for MySQL databases"""
     
     def __init__(
         self,
@@ -20,11 +20,11 @@ class PostgresAdapter(BaseAdapter):
         **kwargs
     ):
         """
-        Initialize PostgreSQL Adapter
+        Initialize MySQL Adapter
 
         Args:
-            connection_string: PostgreSQL connection string (postgresql://user:pass@host:port/dbname)
-            connection: Existing psycopg2 connection object
+            connection_string: MySQL connection string (mysql://user:pass@host:port/dbname)
+            connection: Existing pymysql connection object
             **kwargs: Additional connection parameters (host, port, user, password, database)
 
         Raises:
@@ -37,40 +37,90 @@ class PostgresAdapter(BaseAdapter):
             self.own_connection = False
         elif connection_string:
             try:
-                self.connection = psycopg2.connect(connection_string)
+                # Parse connection string and connect
+                conn_params = self._parse_connection_string(connection_string)
+                self.connection = pymysql.connect(**conn_params)
                 self.own_connection = True
-            except psycopg2.OperationalError as e:
-                raise ConnectionError(f"Failed to connect to PostgreSQL: {e}") from e
+            except pymysql.OperationalError as e:
+                raise ConnectionError(f"Failed to connect to MySQL: {e}") from e
+            except Exception as e:
+                raise ConnectionError(f"Failed to connect to MySQL: {e}") from e
         elif kwargs:
             try:
-                self.connection = psycopg2.connect(**kwargs)
+                self.connection = pymysql.connect(**kwargs)
                 self.own_connection = True
-            except psycopg2.OperationalError as e:
-                raise ConnectionError(f"Failed to connect to PostgreSQL: {e}") from e
+            except pymysql.OperationalError as e:
+                raise ConnectionError(f"Failed to connect to MySQL: {e}") from e
         else:
             raise ValueError(
                 "Invalid configuration. Provide either connection, "
                 "connection_string, or connection parameters (host, port, user, password, database)."
             )
         
-        # Check if connection is closed
-        if self.connection.closed:
+        # Check if connection is open
+        if not self.connection.open:
             raise ConnectionError("Connection is closed")
     
     def _validate_connection(self, conn: Any) -> None:
         """
-        Validate that the connection object is a psycopg2 connection
+        Validate that the connection object is a pymysql connection
 
         Args:
             conn: Connection object to validate
 
         Raises:
-            ValueError: If connection is not a valid psycopg2 connection
+            ValueError: If connection is not a valid pymysql connection
         """
-        if not isinstance(conn, PgConnection):
+        if not isinstance(conn, MySQLConnection):
             raise ValueError(
-                f"Connection must be a psycopg2 connection object, got {type(conn)}"
+                f"Connection must be a pymysql connection object, got {type(conn)}"
             )
+    
+    def _parse_connection_string(self, connection_string: str) -> Dict[str, Any]:
+        """
+        Parse MySQL connection string (mysql://user:pass@host:port/dbname)
+
+        Args:
+            connection_string: MySQL connection string
+
+        Returns:
+            Dict with connection parameters
+
+        Raises:
+            ValueError: If connection string format is invalid
+        """
+        # Remove mysql:// prefix
+        if connection_string.startswith('mysql://'):
+            connection_string = connection_string[8:]
+        elif connection_string.startswith('mysql+pymysql://'):
+            connection_string = connection_string[16:]
+        else:
+            raise ValueError("Connection string must start with mysql:// or mysql+pymysql://")
+        
+        # Parse user:pass@host:port/dbname
+        pattern = r'^(?:([^:]+):([^@]+)@)?([^:/]+)(?::(\d+))?(?:/(.+))?$'
+        match = re.match(pattern, connection_string)
+        
+        if not match:
+            raise ValueError(f"Invalid connection string format: {connection_string}")
+        
+        user, password, host, port, database = match.groups()
+        
+        params = {}
+        if host:
+            params['host'] = host
+        if port:
+            params['port'] = int(port)
+        else:
+            params['port'] = 3306  # Default MySQL port
+        if user:
+            params['user'] = user
+        if password:
+            params['password'] = password
+        if database:
+            params['database'] = database
+        
+        return params
     
     def query(self, sql: str) -> str:
         """
@@ -86,11 +136,11 @@ class PostgresAdapter(BaseAdapter):
             ConnectionError: If connection is closed or unavailable
             QueryError: If query execution fails
         """
-        if self.connection.closed:
+        if not self.connection.open:
             raise ConnectionError("Connection is closed")
         
         try:
-            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+            cursor = self.connection.cursor(DictCursor)
             cursor.execute(sql)
             
             # Check if query returns rows (SELECT queries)
@@ -98,23 +148,24 @@ class PostgresAdapter(BaseAdapter):
                 # SELECT query - fetch results
                 results = cursor.fetchall()
                 data = [dict(row) for row in results]
-                data = self._clean_postgres_data(data)
+                data = self._clean_mysql_data(data)
                 cursor.close()
                 return self._to_toon(data)
             else:
                 # Non-SELECT query (INSERT, UPDATE, DELETE)
-                # Return empty TOON (empty list)
+                # Commit transaction explicitly for DML operations
+                self.connection.commit()
                 cursor.close()
                 return self._to_toon([])
         
-        except psycopg2.OperationalError as e:
+        except pymysql.OperationalError as e:
             # Rollback on connection error
             try:
                 self.connection.rollback()
             except:
                 pass
             raise ConnectionError(f"Connection error during query execution: {e}") from e
-        except (psycopg2.ProgrammingError, psycopg2.IntegrityError) as e:
+        except (pymysql.ProgrammingError, pymysql.IntegrityError) as e:
             # Rollback on query error to allow subsequent queries
             try:
                 self.connection.rollback()
@@ -145,12 +196,12 @@ class PostgresAdapter(BaseAdapter):
         """
         return self.query(sql)
     
-    def _clean_postgres_data(self, docs: List[Dict]) -> List[Dict]:
+    def _clean_mysql_data(self, docs: List[Dict]) -> List[Dict]:
         """
-        Convert PostgreSQL data types to JSON-serializable format
+        Convert MySQL data types to JSON-serializable format
 
         Args:
-            docs: List of dictionaries from PostgreSQL query results
+            docs: List of dictionaries from MySQL query results
 
         Returns:
             List[Dict]: Cleaned data ready for TOON encoding
@@ -179,30 +230,28 @@ class PostgresAdapter(BaseAdapter):
             return float(value)
         elif isinstance(value, (datetime, date, time)):
             return value.isoformat()
-        elif isinstance(value, uuid.UUID):
-            return str(value)
         elif isinstance(value, bytes):
-            # bytea type - convert to base64 string
+            # BLOB types - convert to base64 string
             return base64.b64encode(value).decode('utf-8')
         elif isinstance(value, (list, tuple)):
-            # PostgreSQL arrays
+            # SET types or arrays
             return [self._clean_value(item) for item in value]
         elif isinstance(value, dict):
-            # JSON/JSONB types (already dict/list)
+            # JSON types (already dict/list)
             return {k: self._clean_value(v) for k, v in value.items()}
         elif isinstance(value, (int, float, str, bool)):
             return value
         else:
-            # Fallback for unknown types (custom types, network types, etc.)
+            # Fallback for unknown types (ENUM, custom types, etc.)
             return str(value)
     
-    def get_schema(self, table: Optional[str] = None, schema: str = 'public') -> Dict:
+    def get_schema(self, table: Optional[str] = None, database: Optional[str] = None) -> Dict:
         """
         Get database schema information
 
         Args:
-            table: Table name (optional, if None returns all tables in schema)
-            schema: Schema name (default: 'public')
+            table: Table name (optional, if None returns all tables in database)
+            database: Database name (optional, defaults to current database)
 
         Returns:
             Dict: Schema information with structure:
@@ -212,67 +261,76 @@ class PostgresAdapter(BaseAdapter):
             ConnectionError: If connection is closed or unavailable
             SchemaError: If schema discovery fails
         """
-        if self.connection.closed:
+        if not self.connection.open:
             raise ConnectionError("Connection is closed")
         
         try:
-            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+            cursor = self.connection.cursor(DictCursor)
+            
+            # Get current database if not specified
+            if database is None:
+                cursor.execute("SELECT DATABASE() as db")
+                result = cursor.fetchone()
+                database = result['db'] if result and result['db'] else None
+            
+            if not database:
+                raise SchemaError("No database specified and no current database")
             
             if table:
                 # Get single table schema
                 query = """
                     SELECT 
-                        column_name,
-                        data_type,
-                        is_nullable,
-                        column_default
-                    FROM information_schema.columns
-                    WHERE table_schema = %s AND table_name = %s
-                    ORDER BY ordinal_position;
+                        COLUMN_NAME as column_name,
+                        DATA_TYPE as data_type,
+                        IS_NULLABLE as is_nullable,
+                        COLUMN_DEFAULT as column_default
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+                    ORDER BY ORDINAL_POSITION;
                 """
-                cursor.execute(query, (schema, table))
+                cursor.execute(query, (database, table))
                 columns = [dict(row) for row in cursor.fetchall()]
                 cursor.close()
                 
                 if not columns:
-                    raise SchemaError(f"Table '{schema}.{table}' not found")
+                    raise SchemaError(f"Table '{database}.{table}' not found")
                 
                 return {table: {"columns": columns}}
             else:
-                # Get all tables in schema
+                # Get all tables in database
                 query = """
-                    SELECT DISTINCT table_name
-                    FROM information_schema.tables
-                    WHERE table_schema = %s
-                    AND table_type = 'BASE TABLE'
-                    ORDER BY table_name;
+                    SELECT DISTINCT TABLE_NAME as table_name
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA = %s
+                    AND TABLE_TYPE = 'BASE TABLE'
+                    ORDER BY TABLE_NAME;
                 """
-                cursor.execute(query, (schema,))
+                cursor.execute(query, (database,))
                 tables = [row['table_name'] for row in cursor.fetchall()]
                 cursor.close()
                 
                 schema_dict = {}
                 for table_name in tables:
-                    schema_dict[table_name] = self.get_schema(table_name, schema)[table_name]
+                    schema_dict[table_name] = self.get_schema(table_name, database)[table_name]
                 
                 return schema_dict
         
         except SchemaError:
             raise
-        except psycopg2.OperationalError as e:
+        except pymysql.OperationalError as e:
             raise ConnectionError(f"Connection error during schema discovery: {e}") from e
-        except psycopg2.ProgrammingError as e:
+        except pymysql.ProgrammingError as e:
             raise SchemaError(f"Schema discovery failed: {e}") from e
         except Exception as e:
             raise SchemaError(f"Unexpected error during schema discovery: {e}") from e
     
-    def get_tables(self, include_views: bool = False, schema: str = 'public') -> List[str]:
+    def get_tables(self, include_views: bool = False, database: Optional[str] = None) -> List[str]:
         """
         List all tables in the database
 
         Args:
-            include_views: If True, include views and materialized views (default: False)
-            schema: Schema name (default: 'public')
+            include_views: If True, include views (default: False)
+            database: Database name (optional, defaults to current database)
 
         Returns:
             List[str]: List of table names
@@ -281,49 +339,58 @@ class PostgresAdapter(BaseAdapter):
             ConnectionError: If connection is closed or unavailable
             SchemaError: If table listing fails
         """
-        if self.connection.closed:
+        if not self.connection.open:
             raise ConnectionError("Connection is closed")
         
         try:
-            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+            cursor = self.connection.cursor(DictCursor)
+            
+            # Get current database if not specified
+            if database is None:
+                cursor.execute("SELECT DATABASE() as db")
+                result = cursor.fetchone()
+                database = result['db'] if result and result['db'] else None
+            
+            if not database:
+                raise SchemaError("No database specified and no current database")
             
             if include_views:
                 query = """
-                    SELECT table_name
-                    FROM information_schema.tables
-                    WHERE table_schema = %s
-                    AND table_type IN ('BASE TABLE', 'VIEW', 'MATERIALIZED VIEW')
-                    ORDER BY table_name;
+                    SELECT TABLE_NAME as table_name
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA = %s
+                    AND TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+                    ORDER BY TABLE_NAME;
                 """
             else:
                 query = """
-                    SELECT table_name
-                    FROM information_schema.tables
-                    WHERE table_schema = %s
-                    AND table_type = 'BASE TABLE'
-                    ORDER BY table_name;
+                    SELECT TABLE_NAME as table_name
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA = %s
+                    AND TABLE_TYPE = 'BASE TABLE'
+                    ORDER BY TABLE_NAME;
                 """
             
-            cursor.execute(query, (schema,))
+            cursor.execute(query, (database,))
             tables = [row['table_name'] for row in cursor.fetchall()]
             cursor.close()
             return tables
         
-        except psycopg2.OperationalError as e:
+        except pymysql.OperationalError as e:
             raise ConnectionError(f"Connection error during table listing: {e}") from e
-        except psycopg2.ProgrammingError as e:
+        except pymysql.ProgrammingError as e:
             raise SchemaError(f"Table listing failed: {e}") from e
         except Exception as e:
             raise SchemaError(f"Unexpected error during table listing: {e}") from e
     
     def close(self):
         """
-        Close PostgreSQL connection if adapter owns it
+        Close MySQL connection if adapter owns it
 
         Raises:
             ConnectionError: If connection cannot be closed
         """
-        if self.own_connection and self.connection and not self.connection.closed:
+        if self.own_connection and self.connection and self.connection.open:
             try:
                 self.connection.close()
             except Exception as e:

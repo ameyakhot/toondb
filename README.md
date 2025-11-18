@@ -1,8 +1,8 @@
 # TOON Database Adapter
 
-Convert your MongoDB queries to TOON (Token-Oriented Object Notation) format for efficient LLM usage. Reduce token costs by 30-50% compared to JSON when sending structured data to Large Language Models.
+Convert your database queries to TOON (Token-Oriented Object Notation) format for efficient LLM usage. Reduce token costs by 30-50% compared to JSON when sending structured data to Large Language Models.
 
-This library provides a MongoDB adapter to convert query results into TOON format, making it easy to send database data to LLMs with minimal token usage.
+This library provides adapters for MongoDB, PostgreSQL, and MySQL to convert query results into TOON format, making it easy to send database data to LLMs with minimal token usage.
 
 ## Why TOON?
 
@@ -33,9 +33,11 @@ The TOON format uses 30-50% fewer tokens while maintaining the same information.
 
 ## Features
 
-- **MongoDB Support**: Adapter for MongoDB databases
+- **Multi-Database Support**: Adapters for MongoDB, PostgreSQL, and MySQL
 - **Token Efficiency**: 30-50% reduction in token usage compared to JSON
-- **Works with Existing Databases**: No migration needed - works with your current MongoDB
+- **Works with Existing Databases**: No migration needed - works with your current databases
+- **Schema Discovery**: Auto-discover database schemas and table structures
+- **Error Handling**: Comprehensive error handling with custom exceptions
 - **Easy Integration**: Simple adapter pattern - connect and query as usual
 - **Python-First**: Clean, intuitive API designed for Python developers
 - **Bidirectional Conversion**: Encode to TOON, decode back to Python data structures
@@ -45,23 +47,62 @@ The TOON format uses 30-50% fewer tokens while maintaining the same information.
 Install from PyPI:
 
 ```bash
-pip install toondb
+pip install toonpy
 ```
 
 Or using `uv`:
 
 ```bash
-uv pip install toondb
+uv pip install toonpy
 ```
 
 ## Quick Start
 
-### MongoDB Example
+### PostgreSQL Example
 
-Connect to your MongoDB database and convert query results to TOON format:
+Connect to your PostgreSQL database and convert query results to TOON format:
 
 ```python
-from toondb import MongoAdapter
+from toonpy import PostgresAdapter
+
+# Create adapter with connection string
+adapter = PostgresAdapter(
+    connection_string="postgresql://user:pass@localhost:5432/mydb"
+)
+
+# Query and get TOON format (ready for LLM!)
+toon_result = adapter.query("SELECT name, age FROM users WHERE age > 30")
+print(toon_result)
+adapter.close()
+```
+
+Output:
+```
+[2,]{name,age}:
+  Alice,35
+  Bob,40
+```
+
+### MySQL Example
+
+```python
+from toonpy import MySQLAdapter
+
+# Create adapter with connection string
+adapter = MySQLAdapter(
+    connection_string="mysql://user:pass@localhost:3306/mydb"
+)
+
+# Query and get TOON format
+toon_result = adapter.query("SELECT name, email FROM users LIMIT 5")
+print(toon_result)
+adapter.close()
+```
+
+### MongoDB Example
+
+```python
+from toonpy import MongoAdapter
 from pymongo import MongoClient
 
 # Connect to your existing MongoDB
@@ -76,19 +117,12 @@ toon_result = adapter.find({"age": {"$gt": 30}})
 print(toon_result)
 ```
 
-Output:
-```
-users[2]{id,name,age}:
-  1,Alice,35
-  2,Bob,40
-```
-
 ### Using the Converter Directly
 
 You can also convert Python data structures directly:
 
 ```python
-from toondb import to_toon, from_toon
+from toonpy import to_toon, from_toon
 
 # Convert Python data to TOON
 data = [
@@ -103,12 +137,81 @@ decoded_data = from_toon(toon_string)
 
 ## Usage
 
+### PostgreSQL Adapter
+
+The `PostgresAdapter` works with your existing PostgreSQL databases:
+
+```python
+from toonpy import PostgresAdapter
+
+# Option 1: Use connection string
+adapter = PostgresAdapter(
+    connection_string="postgresql://user:pass@localhost:5432/mydb"
+)
+
+# Option 2: Use individual parameters
+adapter = PostgresAdapter(
+    host="localhost",
+    port=5432,
+    user="user",
+    password="pass",
+    database="mydb"
+)
+
+# Option 3: Use existing connection
+import psycopg2
+conn = psycopg2.connect("postgresql://user:pass@localhost:5432/mydb")
+adapter = PostgresAdapter(connection=conn)
+
+# Query methods
+toon_result = adapter.query("SELECT * FROM users WHERE age > 30")
+toon_result = adapter.execute("SELECT name, email FROM users")  # Alias for query()
+
+# Schema discovery
+schema = adapter.get_schema("users")  # Get single table schema
+all_schemas = adapter.get_schema()   # Get all tables
+tables = adapter.get_tables()        # List all tables
+
+adapter.close()
+```
+
+### MySQL Adapter
+
+The `MySQLAdapter` works with your existing MySQL databases:
+
+```python
+from toonpy import MySQLAdapter
+
+# Option 1: Use connection string
+adapter = MySQLAdapter(
+    connection_string="mysql://user:pass@localhost:3306/mydb"
+)
+
+# Option 2: Use individual parameters
+adapter = MySQLAdapter(
+    host="localhost",
+    port=3306,
+    user="user",
+    password="pass",
+    database="mydb"
+)
+
+# Query methods
+toon_result = adapter.query("SELECT * FROM users WHERE age > 30")
+
+# Schema discovery
+schema = adapter.get_schema("users")
+tables = adapter.get_tables(include_views=True)
+
+adapter.close()
+```
+
 ### MongoDB Adapter
 
 The `MongoAdapter` works with your existing MongoDB collections:
 
 ```python
-from toondb import MongoAdapter
+from toonpy import MongoAdapter
 from pymongo import MongoClient
 
 # Option 1: Pass existing collection
@@ -137,12 +240,26 @@ toon_result = adapter.find(
 ### Advanced Usage
 
 ```python
-# Query with limit (using pymongo cursor)
-results_cursor = collection.find({"category": "electronics"}).limit(10)
-results = list(results_cursor)
-toon_result = adapter._to_toon(results)
+# PostgreSQL: Complex queries with JOINs
+adapter = PostgresAdapter(connection_string="postgresql://...")
+toon_result = adapter.query("""
+    SELECT u.name, p.name as product_name, o.quantity
+    FROM orders o
+    JOIN users u ON o.user_id = u.id
+    JOIN products p ON o.product_id = p.id
+    WHERE o.status = 'completed'
+""")
 
-# Nested queries
+# MySQL: Aggregation queries
+adapter = MySQLAdapter(connection_string="mysql://...")
+toon_result = adapter.query("""
+    SELECT category, COUNT(*) as count, AVG(price) as avg_price
+    FROM products
+    GROUP BY category
+""")
+
+# MongoDB: Nested queries
+adapter = MongoAdapter(collection=collection)
 toon_result = adapter.find({
     "categories_v2.main_category": "Eat",
     "city": "Mumbai"
@@ -150,6 +267,130 @@ toon_result = adapter.find({
 ```
 
 ## API Reference
+
+### PostgresAdapter
+
+#### `__init__(connection_string=None, connection=None, **kwargs)`
+
+Initialize PostgreSQL adapter.
+
+**Parameters:**
+- `connection_string`: PostgreSQL connection string (postgresql://user:pass@host:port/dbname)
+- `connection`: Existing psycopg2 connection object (optional)
+- `**kwargs`: Individual connection parameters (host, port, user, password, database)
+
+**Example:**
+```python
+# Using connection string
+adapter = PostgresAdapter(connection_string="postgresql://user:pass@localhost:5432/mydb")
+
+# Using individual parameters
+adapter = PostgresAdapter(host="localhost", port=5432, user="user", password="pass", database="mydb")
+
+# Using existing connection
+import psycopg2
+conn = psycopg2.connect("postgresql://...")
+adapter = PostgresAdapter(connection=conn)
+```
+
+#### `query(sql: str) -> str`
+
+Execute SQL query and return results in TOON format.
+
+**Parameters:**
+- `sql`: SQL query string
+
+**Returns:** TOON formatted string
+
+**Example:**
+```python
+toon_result = adapter.query("SELECT name, age FROM users WHERE age > 30")
+```
+
+#### `execute(sql: str) -> str`
+
+Alias for `query()` method.
+
+#### `get_schema(table=None, schema='public') -> Dict`
+
+Get database schema information.
+
+**Parameters:**
+- `table`: Table name (optional, if None returns all tables)
+- `schema`: Schema name (default: 'public')
+
+**Returns:** Dictionary with schema information
+
+#### `get_tables(include_views=False, schema='public') -> List[str]`
+
+List all tables in the database.
+
+**Parameters:**
+- `include_views`: If True, include views (default: False)
+- `schema`: Schema name (default: 'public')
+
+**Returns:** List of table names
+
+#### `close()`
+
+Close PostgreSQL connection if adapter owns it.
+
+### MySQLAdapter
+
+#### `__init__(connection_string=None, connection=None, **kwargs)`
+
+Initialize MySQL adapter.
+
+**Parameters:**
+- `connection_string`: MySQL connection string (mysql://user:pass@host:port/dbname)
+- `connection`: Existing pymysql connection object (optional)
+- `**kwargs`: Individual connection parameters (host, port, user, password, database)
+
+**Example:**
+```python
+# Using connection string
+adapter = MySQLAdapter(connection_string="mysql://user:pass@localhost:3306/mydb")
+
+# Using individual parameters
+adapter = MySQLAdapter(host="localhost", port=3306, user="user", password="pass", database="mydb")
+```
+
+#### `query(sql: str) -> str`
+
+Execute SQL query and return results in TOON format.
+
+**Parameters:**
+- `sql`: SQL query string
+
+**Returns:** TOON formatted string
+
+#### `execute(sql: str) -> str`
+
+Alias for `query()` method.
+
+#### `get_schema(table=None, database=None) -> Dict`
+
+Get database schema information.
+
+**Parameters:**
+- `table`: Table name (optional, if None returns all tables)
+- `database`: Database name (optional, defaults to current database)
+
+**Returns:** Dictionary with schema information
+
+#### `get_tables(include_views=False, database=None) -> List[str]`
+
+List all tables in the database.
+
+**Parameters:**
+- `include_views`: If True, include views (default: False)
+- `database`: Database name (optional, defaults to current database)
+
+**Returns:** List of table names
+
+#### `close()`
+
+Close MySQL connection if adapter owns it.
 
 ### MongoAdapter
 
@@ -239,7 +480,20 @@ decoded_data = from_toon(toon_string)
 
 ## Supported Databases
 
+- **PostgreSQL** - Fully supported with `PostgresAdapter`
+  - Schema discovery
+  - All SQL query types (SELECT, INSERT, UPDATE, DELETE)
+  - Comprehensive data type support (arrays, JSON, UUID, etc.)
+
+- **MySQL** - Fully supported with `MySQLAdapter`
+  - Schema discovery
+  - All SQL query types (SELECT, INSERT, UPDATE, DELETE)
+  - MySQL-specific types (ENUM, SET, JSON)
+
 - **MongoDB** - Fully supported with `MongoAdapter`
+  - MongoDB query syntax
+  - Projection support
+  - Nested document queries
 
 ## Use Cases
 
@@ -252,8 +506,29 @@ decoded_data = from_toon(toon_string)
 ## Requirements
 
 - Python 3.8+
-- [python-toon](https://github.com/xaviviro/python-toon) >= 0.1.3 - TOON format encoder/decoder
-- pymongo (for MongoDB support)
+- [python-toon](https://github.com/xaviviro/python-toon) >= 1.0.0 - TOON format encoder/decoder
+
+**Database-specific dependencies:**
+- `psycopg2-binary` (for PostgreSQL support)
+- `pymysql` (for MySQL support)
+- `pymongo` (for MongoDB support)
+
+Install all dependencies:
+```bash
+pip install toonpy psycopg2-binary pymysql pymongo
+```
+
+Or install only what you need:
+```bash
+# PostgreSQL only
+pip install toonpy psycopg2-binary
+
+# MySQL only
+pip install toonpy pymysql
+
+# MongoDB only
+pip install toonpy pymongo
+```
 
 ## Development
 
@@ -292,12 +567,22 @@ MIT License
 
 ## Links
 
-- PyPI: https://pypi.org/project/toondb/
+- PyPI: https://pypi.org/project/toonpy/
 - GitHub: https://github.com/ameyakhot/toondb
 - Issues: https://github.com/ameyakhot/toondb/issues
 - python-toon library: https://github.com/xaviviro/python-toon
 
 ## Changelog
+
+### 0.2.0 (Current)
+
+- **PostgreSQL adapter** - Full support with schema discovery
+- **MySQL adapter** - Full support with schema discovery
+- **Error handling** - Custom exception classes (ConnectionError, QueryError, SchemaError)
+- **Schema discovery** - Auto-discover database schemas for PostgreSQL and MySQL
+- **Comprehensive type support** - Handle arrays, JSON, UUID, BLOB, and more
+- **Transaction management** - Automatic rollback on errors
+- **Enhanced documentation** - Examples for all three databases
 
 ### 0.1.0 (Initial Release)
 

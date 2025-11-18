@@ -1,4 +1,4 @@
-from toondb import MongoAdapter, to_toon
+from toonpy import MongoAdapter, to_toon
 from pymongo import MongoClient
 
 MONGO_URI = "XXX"

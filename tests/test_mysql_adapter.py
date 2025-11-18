@@ -9,7 +9,7 @@ from pymysql.cursors import DictCursor
 from datetime import datetime, date, time
 from decimal import Decimal
 
-from toondb import MySQLAdapter, ConnectionError, QueryError, SchemaError
+from toonpy import MySQLAdapter, ConnectionError, QueryError, SchemaError
 
 # Connection string for Docker MySQL instance
 MYSQL_CONN_STRING = "mysql://testuser:testpass@localhost:3306/testdb"

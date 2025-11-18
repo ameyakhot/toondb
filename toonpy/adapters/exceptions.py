@@ -1,10 +1,10 @@
 """
-Custom exceptions for toondb adapters
+Custom exceptions for toonpy adapters
 """
 
 
 class ToonDBError(Exception):
-    """Base exception class for all toondb errors"""
+    """Base exception class for all toonpy errors"""
     pass
 
 

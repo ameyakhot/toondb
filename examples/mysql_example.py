@@ -2,7 +2,7 @@
 MySQL Adapter Examples
 Demonstrates usage of MySQLAdapter with various scenarios
 """
-from toondb import MySQLAdapter, ConnectionError, QueryError, SchemaError
+from toonpy import MySQLAdapter, ConnectionError, QueryError, SchemaError
 import pymysql
 
 # Connection string for Docker MySQL instance

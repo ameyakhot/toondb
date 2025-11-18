@@ -2,7 +2,7 @@
 PostgreSQL Adapter Examples
 Demonstrates usage of PostgresAdapter with various scenarios
 """
-from toondb import PostgresAdapter, ConnectionError, QueryError, SchemaError
+from toonpy import PostgresAdapter, ConnectionError, QueryError, SchemaError
 import psycopg2
 
 # Connection string for Docker PostgreSQL instance

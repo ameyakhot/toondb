@@ -10,7 +10,7 @@ from datetime import datetime, date, time
 from decimal import Decimal
 import uuid
 
-from toondb import PostgresAdapter, ConnectionError, QueryError, SchemaError
+from toonpy import PostgresAdapter, ConnectionError, QueryError, SchemaError
 
 # Connection string for Docker PostgreSQL instance
 POSTGRES_CONN_STRING = "postgresql://testuser:testpass@localhost:5432/testdb"
