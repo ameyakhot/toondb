@@ -341,11 +341,15 @@ toon_result = adapter.query("""
     GROUP BY category
 """)
 
-# MongoDB: Nested queries
-adapter = MongoAdapter(collection=collection)
+# MongoDB: Query with nested fields (using docker test data)
+adapter = MongoAdapter(
+    connection_string="mongodb://localhost:27017",
+    database="testdb",
+    collection_name="users"
+)
 toon_result = adapter.find({
-    "categories_v2.main_category": "Eat",
-    "city": "Mumbai"
+    "address.city": "New York",
+    "age": {"$gt": 25}
 })
 ```
 
@@ -390,20 +394,20 @@ Execute SQL query and return results in TOON format.
 
 **Examples:**
 ```python
-# ✅ Safe: Parameterized query (recommended)
+# Safe: Parameterized query (recommended)
 toon_result = adapter.query("SELECT name, age FROM users WHERE id = %s", (123,))
 toon_result = adapter.query("SELECT * FROM users WHERE name = %s AND age > %s", ("Alice", 30))
 
-# ✅ Safe: Parameterized query with dict parameters
+# Safe: Parameterized query with dict parameters
 toon_result = adapter.query(
     "SELECT * FROM users WHERE id = %(user_id)s AND age > %(min_age)s",
     {"user_id": 123, "min_age": 20}
 )
 
-# ⚠️ Use with caution: Raw SQL (only for trusted, static queries)
+# Use with caution: Raw SQL (only for trusted, static queries)
 toon_result = adapter.query("SELECT name, age FROM users WHERE age > 30")
 
-# ❌ Unsafe: String concatenation (SQL injection risk)
+# Unsafe: String concatenation (SQL injection risk)
 user_id = "123; DROP TABLE users; --"
 toon_result = adapter.query(f"SELECT * FROM users WHERE id = {user_id}")  # DON'T DO THIS
 ```
@@ -470,17 +474,17 @@ Execute SQL query and return results in TOON format.
 
 **Examples:**
 ```python
-# ✅ Safe: Parameterized query (recommended)
+# Safe: Parameterized query (recommended)
 toon_result = adapter.query("SELECT name, email FROM users WHERE id = %s", (123,))
 toon_result = adapter.query("SELECT * FROM users WHERE name = %s AND age > %s", ("Alice", 30))
 
-# ✅ Safe: Parameterized query with dict parameters
+# Safe: Parameterized query with dict parameters
 toon_result = adapter.query(
     "SELECT * FROM users WHERE id = %(user_id)s AND age > %(min_age)s",
     {"user_id": 123, "min_age": 20}
 )
 
-# ⚠️ Use with caution: Raw SQL (only for trusted, static queries)
+# Use with caution: Raw SQL (only for trusted, static queries)
 toon_result = adapter.query("SELECT name, email FROM users LIMIT 5")
 ```
 
@@ -630,11 +634,11 @@ decoded_data = from_toon(toon_string)
 **Always use parameterized queries when including user input:**
 
 ```python
-# ✅ Safe: Parameterized query
+# Safe: Parameterized query
 adapter.query("SELECT * FROM users WHERE id = %s", (user_id,))
 adapter.query("SELECT * FROM users WHERE name = %s AND age > %s", (name, min_age))
 
-# ❌ Unsafe: String concatenation (SQL injection risk)
+# Unsafe: String concatenation (SQL injection risk)
 adapter.query(f"SELECT * FROM users WHERE id = {user_id}")  # DON'T DO THIS
 adapter.query("SELECT * FROM users WHERE id = " + str(user_id))  # DON'T DO THIS
 ```
@@ -655,11 +659,11 @@ from toonpy import connect
 # Connect to database
 adapter = connect("postgresql://user:pass@localhost:5432/mydb")
 
-# ✅ Safe: Parameterized query
+# Safe: Parameterized query
 def get_user(user_id: int):
     return adapter.query("SELECT * FROM users WHERE id = %s", (user_id,))
 
-# ❌ Unsafe: String formatting
+# Unsafe: String formatting
 def get_user_unsafe(user_id: int):
     return adapter.query(f"SELECT * FROM users WHERE id = {user_id}")  # VULNERABLE
 ```
