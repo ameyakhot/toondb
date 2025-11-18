@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "toondb"
-version = "0.1.5"
+version = "0.1.6"
 description = "Multi-database adapter library that converts query results to TOON format for efficient LLM usage"
 readme = "README.md"
 requires-python = ">=3.8"
