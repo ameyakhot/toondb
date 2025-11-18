@@ -290,6 +290,276 @@ class TestPostgresAdapterUnit(unittest.TestCase):
         self.assertEqual(cleaned['decimal'], 10.5)
         self.assertEqual(cleaned['datetime'], "2024-01-01T00:00:00")
         self.assertEqual(cleaned['array'], [1.1, 2.2])
+    
+    @patch('psycopg2.connect')
+    def test_validate_table_name(self, mock_connect):
+        """Test table name validation"""
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_connect.return_value = mock_conn
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Valid table names
+        adapter._validate_table_name("users")
+        adapter._validate_table_name("users_table")
+        adapter._validate_table_name("schema.users")
+        
+        # Invalid table names
+        from toonpy.adapters.exceptions import SecurityError
+        with self.assertRaises(SecurityError):
+            adapter._validate_table_name("users; DROP TABLE users;--")
+        with self.assertRaises(SecurityError):
+            adapter._validate_table_name("users' OR '1'='1")
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_generate_insert_sql_single_row(self, mock_connect):
+        """Test INSERT SQL generation for single row"""
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_connect.return_value = mock_conn
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema to avoid actual DB call
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "name", "data_type": "character varying"},
+            {"column_name": "age", "data_type": "integer"}
+        ]}})
+        
+        data = {"name": "Alice", "age": 30}
+        sql, params = adapter._generate_insert_sql("users", data)
+        
+        self.assertIn("INSERT INTO", sql)
+        self.assertIn("users", sql)
+        self.assertIn("name", sql)
+        self.assertIn("age", sql)
+        self.assertEqual(len(params), 2)
+        self.assertEqual(params, ["Alice", 30])
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_generate_insert_sql_multiple_rows(self, mock_connect):
+        """Test INSERT SQL generation for multiple rows"""
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_connect.return_value = mock_conn
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema to avoid actual DB call
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "name", "data_type": "character varying"},
+            {"column_name": "age", "data_type": "integer"}
+        ]}})
+        
+        data = [
+            {"name": "Alice", "age": 30},
+            {"name": "Bob", "age": 25}
+        ]
+        sql, params = adapter._generate_insert_sql("users", data)
+        
+        self.assertIn("INSERT INTO", sql)
+        self.assertIn("VALUES", sql)
+        self.assertEqual(len(params), 4)  # 2 rows * 2 columns
+        self.assertEqual(params, ["Alice", 30, "Bob", 25])
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_generate_update_sql(self, mock_connect):
+        """Test UPDATE SQL generation"""
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_connect.return_value = mock_conn
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema to avoid actual DB call
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "age", "data_type": "integer"},
+            {"column_name": "id", "data_type": "integer"}
+        ]}})
+        
+        data = {"age": 31}
+        where = {"id": 123}
+        sql, params = adapter._generate_update_sql("users", data, where)
+        
+        self.assertIn("UPDATE", sql)
+        self.assertIn("users", sql)
+        self.assertIn("SET", sql)
+        self.assertIn("WHERE", sql)
+        self.assertEqual(len(params), 2)
+        self.assertEqual(params, [31, 123])
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_generate_delete_sql(self, mock_connect):
+        """Test DELETE SQL generation"""
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_connect.return_value = mock_conn
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema to avoid actual DB call
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "status", "data_type": "character varying"}
+        ]}})
+        
+        where = {"status": "inactive"}
+        sql, params = adapter._generate_delete_sql("users", where)
+        
+        self.assertIn("DELETE FROM", sql)
+        self.assertIn("users", sql)
+        self.assertIn("WHERE", sql)
+        self.assertEqual(len(params), 1)
+        self.assertEqual(params, ["inactive"])
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_insert_one_from_toon(self, mock_connect):
+        """Test insert_one_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.rowcount = 1
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema to avoid actual DB call
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "name", "data_type": "character varying"},
+            {"column_name": "age", "data_type": "integer"}
+        ]}})
+        
+        document = {"name": "Test User", "age": 25}
+        toon_string = to_toon([document])
+        result = adapter.insert_one_from_toon("users", toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        mock_cursor.execute.assert_called_once()
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_insert_many_from_toon(self, mock_connect):
+        """Test insert_many_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.rowcount = 2
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "name", "data_type": "character varying"},
+            {"column_name": "age", "data_type": "integer"}
+        ]}})
+        
+        documents = [
+            {"name": "User 1", "age": 25},
+            {"name": "User 2", "age": 30}
+        ]
+        toon_string = to_toon(documents)
+        result = adapter.insert_many_from_toon("users", toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        mock_cursor.execute.assert_called_once()
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_update_from_toon(self, mock_connect):
+        """Test update_from_toon method"""
+        from toonpy.core.converter import to_toon
+        
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.rowcount = 1
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "age", "data_type": "integer"},
+            {"column_name": "id", "data_type": "integer"}
+        ]}})
+        
+        update_data = {"age": 31}
+        toon_string = to_toon([update_data])
+        result = adapter.update_from_toon("users", toon_string, where={"id": 123})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        mock_cursor.execute.assert_called_once()
+        adapter.close()
+    
+    @patch('psycopg2.connect')
+    def test_delete_from_toon(self, mock_connect):
+        """Test delete_from_toon method"""
+        mock_conn = Mock()
+        mock_conn.closed = False
+        mock_cursor = Mock()
+        mock_cursor.rowcount = 1
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        adapter = PostgresAdapter(connection_string=POSTGRES_CONN_STRING)
+        
+        # Mock get_schema
+        adapter.get_schema = Mock(return_value={"users": {"columns": [
+            {"column_name": "id", "data_type": "integer"}
+        ]}})
+        
+        result = adapter.delete_from_toon("users", where={"id": 123})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        mock_cursor.execute.assert_called_once()
+        adapter.close()
+    
+    def test_convert_to_postgres_value_date_string(self):
+        """Test converting date string to PostgreSQL date"""
+        mock_conn = Mock()
+        mock_conn.__class__ = psycopg2.extensions.connection
+        mock_conn.closed = False
+        adapter = PostgresAdapter(connection=mock_conn)
+        
+        # Date string
+        result = adapter._convert_to_postgres_value("2024-01-15", "date")
+        self.assertIsInstance(result, date)
+        self.assertEqual(result, date(2024, 1, 15))
+    
+    def test_convert_to_postgres_value_datetime_string(self):
+        """Test converting datetime string to PostgreSQL timestamp"""
+        mock_conn = Mock()
+        mock_conn.__class__ = psycopg2.extensions.connection
+        mock_conn.closed = False
+        adapter = PostgresAdapter(connection=mock_conn)
+        
+        # Datetime string
+        result = adapter._convert_to_postgres_value("2024-01-15T10:30:45", "timestamp")
+        self.assertIsInstance(result, datetime)
+    
+    def test_convert_to_postgres_value_uuid_string(self):
+        """Test converting UUID string to PostgreSQL UUID"""
+        mock_conn = Mock()
+        mock_conn.__class__ = psycopg2.extensions.connection
+        mock_conn.closed = False
+        adapter = PostgresAdapter(connection=mock_conn)
+        
+        test_uuid_str = str(uuid.uuid4())
+        result = adapter._convert_to_postgres_value(test_uuid_str, "uuid")
+        self.assertIsInstance(result, uuid.UUID)
+        self.assertEqual(str(result), test_uuid_str)
 
 
 class TestPostgresAdapterIntegration(unittest.TestCase):
@@ -453,6 +723,107 @@ class TestPostgresAdapterIntegration(unittest.TestCase):
         result1 = self.adapter.query("SELECT COUNT(*) as count FROM users")
         result2 = self.adapter.execute("SELECT COUNT(*) as count FROM users")
         self.assertEqual(result1, result2)
+    
+    def test_insert_one_from_toon(self):
+        """Test insert_one_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        
+        # Insert test document
+        document = {
+            "name": "Test Insert User",
+            "email": "testinsert@example.com",
+            "age": 28,
+            "role": "test"
+        }
+        toon_string = to_toon([document])
+        result = self.adapter.insert_one_from_toon("users", toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        
+        # Verify insert
+        verify = self.adapter.query(
+            "SELECT name FROM users WHERE email = %s",
+            ("testinsert@example.com",)
+        )
+        self.assertIn("test insert user", verify.lower())
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = 'testinsert@example.com'")
+    
+    def test_insert_many_from_toon(self):
+        """Test insert_many_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        
+        # Insert test documents
+        documents = [
+            {"name": "Test User 1", "email": "test1@example.com", "age": 25, "role": "test"},
+            {"name": "Test User 2", "email": "test2@example.com", "age": 26, "role": "test"}
+        ]
+        toon_string = to_toon(documents)
+        result = self.adapter.insert_many_from_toon("users", toon_string)
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        
+        # Verify inserts
+        verify = self.adapter.query(
+            "SELECT COUNT(*) as count FROM users WHERE email IN (%s, %s)",
+            ("test1@example.com", "test2@example.com")
+        )
+        self.assertIn("2", verify)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email IN ('test1@example.com', 'test2@example.com')")
+    
+    def test_update_from_toon(self):
+        """Test update_from_toon integration"""
+        from toonpy.core.converter import to_toon
+        
+        # First insert a test document
+        self.adapter.query("""
+            INSERT INTO users (name, email, age, role)
+            VALUES ('Update Test', 'updatetest@example.com', 25, 'test')
+        """)
+        
+        # Update it
+        update_data = {"age": 30, "role": "updated"}
+        toon_string = to_toon([update_data])
+        result = self.adapter.update_from_toon("users", toon_string, where={"email": "updatetest@example.com"})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        
+        # Verify update
+        verify = self.adapter.query(
+            "SELECT age FROM users WHERE email = %s",
+            ("updatetest@example.com",)
+        )
+        self.assertIn("30", verify)
+        
+        # Clean up
+        self.adapter.query("DELETE FROM users WHERE email = 'updatetest@example.com'")
+    
+    def test_delete_from_toon(self):
+        """Test delete_from_toon integration"""
+        # Insert test document
+        self.adapter.query("""
+            INSERT INTO users (name, email, age, role)
+            VALUES ('Delete Test', 'deletetest@example.com', 25, 'test')
+        """)
+        
+        # Delete it
+        result = self.adapter.delete_from_toon("users", where={"email": "deletetest@example.com"})
+        
+        self.assertIsInstance(result, str)
+        self.assertIn("rowcount", result.lower())
+        
+        # Verify deletion
+        verify = self.adapter.query(
+            "SELECT COUNT(*) as count FROM users WHERE email = %s",
+            ("deletetest@example.com",)
+        )
+        self.assertIn("0", verify)
 
 
 if __name__ == '__main__':

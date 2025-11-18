@@ -340,6 +340,626 @@ class PostgresAdapter(BaseAdapter):
         except Exception as e:
             raise SchemaError(f"Unexpected error during table listing: {e}") from e
     
+    def _validate_table_name(self, table: str) -> None:
+        """
+        Validate table name to prevent SQL injection.
+        
+        Args:
+            table: Table name to validate
+        
+        Raises:
+            SecurityError: If table name contains invalid characters
+        """
+        # Allow alphanumeric, underscore, and dot (for schema.table)
+        import re
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_.]*$', table):
+            raise SecurityError(f"Invalid table name: {table}. Only alphanumeric, underscore, and dot allowed.")
+    
+    def _validate_column_names(self, table: str, columns: List[str], schema: str = 'public') -> None:
+        """
+        Validate that columns exist in the table schema.
+        
+        Args:
+            table: Table name
+            columns: List of column names to validate
+            schema: Schema name
+        
+        Raises:
+            SchemaError: If any column doesn't exist
+        
+        Note:
+            If schema lookup fails, validation is skipped (graceful degradation)
+        """
+        try:
+            table_schema = self.get_schema(table, schema)
+            valid_columns = {col['column_name'] for col in table_schema[table]['columns']}
+            
+            for col in columns:
+                if col not in valid_columns:
+                    raise SchemaError(f"Column '{col}' does not exist in table '{schema}.{table}'")
+        except SchemaError:
+            # Re-raise SchemaError (column doesn't exist or table doesn't exist)
+            raise
+        except Exception:
+            # If schema lookup fails for other reasons, skip validation
+            # This allows operations to proceed even if schema discovery fails
+            pass
+    
+    def _generate_insert_sql(
+        self, 
+        table: str, 
+        data: Union[Dict, List[Dict]], 
+        schema: str = 'public',
+        on_conflict: Optional[str] = None
+    ) -> Tuple[str, List[Any]]:
+        """
+        Generate parameterized INSERT SQL.
+        
+        Args:
+            table: Table name
+            data: Single dict or list of dicts with row data
+            schema: Schema name
+            on_conflict: Optional ON CONFLICT clause
+        
+        Returns:
+            Tuple of (SQL string, parameter list)
+        
+        Raises:
+            SecurityError: If table name is invalid
+            SchemaError: If columns don't exist
+        """
+        self._validate_table_name(table)
+        
+        # Handle single row or multiple rows
+        if isinstance(data, dict):
+            rows = [data]
+        else:
+            rows = data
+        
+        if len(rows) == 0:
+            raise ValueError("No data provided for INSERT")
+        
+        # Get column names from first row
+        columns = list(rows[0].keys())
+        
+        # Validate columns exist
+        self._validate_column_names(table, columns, schema)
+        
+        # Build SQL
+        table_qualified = f"{schema}.{table}" if schema != 'public' else table
+        columns_str = ", ".join(columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        
+        # Build VALUES clause for all rows
+        if len(rows) == 1:
+            values_clause = f"VALUES ({placeholders})"
+            params = [rows[0][col] for col in columns]
+        else:
+            # Multi-row INSERT
+            values_list = []
+            params = []
+            for row in rows:
+                values_list.append(f"({placeholders})")
+                params.extend([row.get(col) for col in columns])
+            values_clause = f"VALUES {', '.join(values_list)}"
+        
+        sql = f"INSERT INTO {table_qualified} ({columns_str}) {values_clause}"
+        
+        if on_conflict:
+            sql += f" ON CONFLICT {on_conflict}"
+        
+        return sql, params
+    
+    def _generate_update_sql(
+        self,
+        table: str,
+        data: Dict,
+        where: Dict[str, Any],
+        schema: str = 'public'
+    ) -> Tuple[str, List[Any]]:
+        """
+        Generate parameterized UPDATE SQL.
+        
+        Args:
+            table: Table name
+            data: Dict with column values to update
+            where: Dict with WHERE clause conditions
+            schema: Schema name
+        
+        Returns:
+            Tuple of (SQL string, parameter list)
+        
+        Raises:
+            SecurityError: If table name is invalid
+            SchemaError: If columns don't exist
+        """
+        self._validate_table_name(table)
+        
+        if not data:
+            raise ValueError("No update data provided")
+        
+        if not where:
+            raise ValueError("WHERE clause is required for UPDATE")
+        
+        # Validate columns
+        update_columns = list(data.keys())
+        where_columns = list(where.keys())
+        self._validate_column_names(table, update_columns + where_columns, schema)
+        
+        # Build SET clause
+        set_clauses = [f"{col} = %s" for col in update_columns]
+        set_sql = ", ".join(set_clauses)
+        
+        # Build WHERE clause
+        where_clauses = [f"{col} = %s" for col in where_columns]
+        where_sql = " AND ".join(where_clauses)
+        
+        # Build parameters
+        params = [data[col] for col in update_columns] + [where[col] for col in where_columns]
+        
+        table_qualified = f"{schema}.{table}" if schema != 'public' else table
+        sql = f"UPDATE {table_qualified} SET {set_sql} WHERE {where_sql}"
+        
+        return sql, params
+    
+    def _generate_delete_sql(
+        self,
+        table: str,
+        where: Dict[str, Any],
+        schema: str = 'public'
+    ) -> Tuple[str, List[Any]]:
+        """
+        Generate parameterized DELETE SQL.
+        
+        Args:
+            table: Table name
+            where: Dict with WHERE clause conditions
+            schema: Schema name
+        
+        Returns:
+            Tuple of (SQL string, parameter list)
+        
+        Raises:
+            SecurityError: If table name is invalid
+            SchemaError: If columns don't exist
+        """
+        self._validate_table_name(table)
+        
+        if not where:
+            raise ValueError("WHERE clause is required for DELETE")
+        
+        # Validate columns
+        where_columns = list(where.keys())
+        self._validate_column_names(table, where_columns, schema)
+        
+        # Build WHERE clause
+        where_clauses = [f"{col} = %s" for col in where_columns]
+        where_sql = " AND ".join(where_clauses)
+        
+        # Build parameters
+        params = [where[col] for col in where_columns]
+        
+        table_qualified = f"{schema}.{table}" if schema != 'public' else table
+        sql = f"DELETE FROM {table_qualified} WHERE {where_sql}"
+        
+        return sql, params
+    
+    def _convert_to_postgres_value(self, value: Any, column_type: Optional[str] = None) -> Any:
+        """
+        Convert Python value to PostgreSQL-compatible type.
+        
+        Args:
+            value: Value from TOON (after from_toon())
+            column_type: Optional PostgreSQL column type from schema
+        
+        Returns:
+            PostgreSQL-compatible value
+        """
+        if value is None:
+            return None
+        
+        # Handle date/time strings (from TOON)
+        if isinstance(value, str):
+            # Try to parse ISO date/time strings
+            try:
+                # Try datetime first
+                if 'T' in value or len(value) > 10:
+                    return datetime.fromisoformat(value.replace('Z', '+00:00'))
+                # Try date
+                return date.fromisoformat(value)
+            except (ValueError, AttributeError):
+                pass
+            
+            # Try UUID string
+            if column_type and 'uuid' in column_type.lower():
+                try:
+                    return uuid.UUID(value)
+                except (ValueError, AttributeError):
+                    pass
+            
+            # Try base64 for bytea
+            if column_type and 'bytea' in column_type.lower():
+                try:
+                    return base64.b64decode(value)
+                except Exception:
+                    pass
+        
+        # Handle lists (for arrays)
+        if isinstance(value, list):
+            return [self._convert_to_postgres_value(item, column_type) for item in value]
+        
+        # Handle dicts (for JSON/JSONB)
+        if isinstance(value, dict):
+            return {k: self._convert_to_postgres_value(v, column_type) for k, v in value.items()}
+        
+        # Return as-is for primitives
+        return value
+    
+    def insert_one_from_toon(
+        self, 
+        table: str, 
+        toon_string: str, 
+        schema: str = 'public',
+        on_conflict: Optional[str] = None
+    ) -> str:
+        """
+        Insert single row from TOON format.
+        
+        Flow: TOON → from_toon() → Generate INSERT SQL → Execute with params → Return result as TOON
+        
+        Args:
+            table: Table name
+            toon_string: TOON formatted string with row data
+            schema: Schema name (default: 'public')
+            on_conflict: PostgreSQL ON CONFLICT clause (e.g., "DO NOTHING", "DO UPDATE SET ...")
+        
+        Returns:
+            str: TOON formatted string with insert result (rowcount)
+        
+        Raises:
+            ConnectionError: If connection is closed
+            QueryError: If insert fails
+            SchemaError: If table/columns don't exist
+            SecurityError: If table name is invalid
+        """
+        from toonpy.core.converter import from_toon
+        
+        if self.connection.closed:
+            raise ConnectionError("Connection is closed")
+        
+        try:
+            # Convert TOON to Python data
+            data = from_toon(toon_string)
+            
+            # Handle both single dict and list with one dict
+            if isinstance(data, list):
+                if len(data) == 0:
+                    raise ValueError("TOON string must contain at least one row")
+                row = data[0]
+            elif isinstance(data, dict):
+                row = data
+            else:
+                raise ValueError(f"TOON string must decode to a dict or list of dicts, got {type(data)}")
+            
+            # Get schema for type conversion
+            try:
+                table_schema = self.get_schema(table, schema)
+                column_types = {col['column_name']: col['data_type'] for col in table_schema[table]['columns']}
+            except SchemaError:
+                column_types = {}
+            
+            # Convert values to PostgreSQL types
+            converted_row = {}
+            for key, value in row.items():
+                col_type = column_types.get(key)
+                converted_row[key] = self._convert_to_postgres_value(value, col_type)
+            
+            # Generate SQL
+            sql, params = self._generate_insert_sql(table, converted_row, schema, on_conflict)
+            
+            # Execute
+            cursor = self.connection.cursor()
+            cursor.execute(sql, params)
+            rowcount = cursor.rowcount
+            cursor.close()
+            self.connection.commit()
+            
+            # Return result as TOON
+            result_dict = {"rowcount": rowcount}
+            return self._to_toon([result_dict])
+        
+        except (SecurityError, SchemaError, ValueError):
+            raise
+        except psycopg2.OperationalError as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise ConnectionError(f"Connection error during insert: {e}") from e
+        except (psycopg2.ProgrammingError, psycopg2.IntegrityError) as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Insert failed: {e}") from e
+        except Exception as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Unexpected error during insert: {e}") from e
+    
+    def insert_many_from_toon(
+        self, 
+        table: str, 
+        toon_string: str, 
+        schema: str = 'public',
+        on_conflict: Optional[str] = None
+    ) -> str:
+        """
+        Insert multiple rows from TOON format using bulk INSERT.
+        
+        Flow: TOON → from_toon() → Generate bulk INSERT SQL → Execute with params → Return result as TOON
+        
+        Args:
+            table: Table name
+            toon_string: TOON formatted string with list of rows
+            schema: Schema name (default: 'public')
+            on_conflict: PostgreSQL ON CONFLICT clause
+        
+        Returns:
+            str: TOON formatted string with insert result (rowcount)
+        
+        Raises:
+            ConnectionError: If connection is closed
+            QueryError: If insert fails
+            SchemaError: If table/columns don't exist
+            SecurityError: If table name is invalid
+        """
+        from toonpy.core.converter import from_toon
+        
+        if self.connection.closed:
+            raise ConnectionError("Connection is closed")
+        
+        try:
+            # Convert TOON to Python data
+            data = from_toon(toon_string)
+            
+            # Ensure data is a list
+            if not isinstance(data, list):
+                data = [data]
+            
+            if len(data) == 0:
+                raise ValueError("TOON string must contain at least one row")
+            
+            # Get schema for type conversion
+            try:
+                table_schema = self.get_schema(table, schema)
+                column_types = {col['column_name']: col['data_type'] for col in table_schema[table]['columns']}
+            except SchemaError:
+                column_types = {}
+            
+            # Convert values to PostgreSQL types
+            converted_rows = []
+            for row in data:
+                converted_row = {}
+                for key, value in row.items():
+                    col_type = column_types.get(key)
+                    converted_row[key] = self._convert_to_postgres_value(value, col_type)
+                converted_rows.append(converted_row)
+            
+            # Generate SQL
+            sql, params = self._generate_insert_sql(table, converted_rows, schema, on_conflict)
+            
+            # Execute
+            cursor = self.connection.cursor()
+            cursor.execute(sql, params)
+            rowcount = cursor.rowcount
+            cursor.close()
+            self.connection.commit()
+            
+            # Return result as TOON
+            result_dict = {"rowcount": rowcount}
+            return self._to_toon([result_dict])
+        
+        except (SecurityError, SchemaError, ValueError):
+            raise
+        except psycopg2.OperationalError as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise ConnectionError(f"Connection error during insert: {e}") from e
+        except (psycopg2.ProgrammingError, psycopg2.IntegrityError) as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Insert failed: {e}") from e
+        except Exception as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Unexpected error during insert: {e}") from e
+    
+    def update_from_toon(
+        self,
+        table: str,
+        toon_string: str,
+        where: Dict[str, Any],
+        schema: str = 'public'
+    ) -> str:
+        """
+        Update rows from TOON format.
+        
+        Flow: TOON → from_toon() → Generate UPDATE SQL → Execute with params → Return result as TOON
+        
+        Args:
+            table: Table name
+            toon_string: TOON formatted string with update data
+            where: WHERE clause conditions as dict (e.g., {"id": 123, "status": "active"})
+            schema: Schema name (default: 'public')
+        
+        Returns:
+            str: TOON formatted string with update result (rowcount)
+        
+        Raises:
+            ConnectionError: If connection is closed
+            QueryError: If update fails
+            SchemaError: If table/columns don't exist
+            SecurityError: If table name is invalid
+        """
+        from toonpy.core.converter import from_toon
+        
+        if self.connection.closed:
+            raise ConnectionError("Connection is closed")
+        
+        try:
+            # Convert TOON to Python data
+            update_data = from_toon(toon_string)
+            
+            # Handle both single dict and list with one dict
+            if isinstance(update_data, list):
+                if len(update_data) == 0:
+                    raise ValueError("TOON string must contain update data")
+                data = update_data[0]
+            elif isinstance(update_data, dict):
+                data = update_data
+            else:
+                raise ValueError(f"TOON string must decode to a dict or list of dicts, got {type(update_data)}")
+            
+            # Get schema for type conversion
+            try:
+                table_schema = self.get_schema(table, schema)
+                column_types = {col['column_name']: col['data_type'] for col in table_schema[table]['columns']}
+            except SchemaError:
+                column_types = {}
+            
+            # Convert values to PostgreSQL types
+            converted_data = {}
+            for key, value in data.items():
+                col_type = column_types.get(key)
+                converted_data[key] = self._convert_to_postgres_value(value, col_type)
+            
+            # Convert WHERE values
+            converted_where = {}
+            for key, value in where.items():
+                col_type = column_types.get(key)
+                converted_where[key] = self._convert_to_postgres_value(value, col_type)
+            
+            # Generate SQL
+            sql, params = self._generate_update_sql(table, converted_data, converted_where, schema)
+            
+            # Execute
+            cursor = self.connection.cursor()
+            cursor.execute(sql, params)
+            rowcount = cursor.rowcount
+            cursor.close()
+            self.connection.commit()
+            
+            # Return result as TOON
+            result_dict = {"rowcount": rowcount}
+            return self._to_toon([result_dict])
+        
+        except (SecurityError, SchemaError, ValueError):
+            raise
+        except psycopg2.OperationalError as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise ConnectionError(f"Connection error during update: {e}") from e
+        except (psycopg2.ProgrammingError, psycopg2.IntegrityError) as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Update failed: {e}") from e
+        except Exception as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Unexpected error during update: {e}") from e
+    
+    def delete_from_toon(
+        self,
+        table: str,
+        where: Dict[str, Any],
+        schema: str = 'public'
+    ) -> str:
+        """
+        Delete rows based on WHERE conditions.
+        
+        Flow: Generate DELETE SQL from WHERE dict → Execute with params → Return result as TOON
+        
+        Args:
+            table: Table name
+            where: WHERE clause conditions as dict
+            schema: Schema name (default: 'public')
+        
+        Returns:
+            str: TOON formatted string with delete result (rowcount)
+        
+        Raises:
+            ConnectionError: If connection is closed
+            QueryError: If delete fails
+            SchemaError: If table/columns don't exist
+            SecurityError: If table name is invalid
+        """
+        if self.connection.closed:
+            raise ConnectionError("Connection is closed")
+        
+        try:
+            # Get schema for type conversion
+            try:
+                table_schema = self.get_schema(table, schema)
+                column_types = {col['column_name']: col['data_type'] for col in table_schema[table]['columns']}
+            except SchemaError:
+                column_types = {}
+            
+            # Convert WHERE values
+            converted_where = {}
+            for key, value in where.items():
+                col_type = column_types.get(key)
+                converted_where[key] = self._convert_to_postgres_value(value, col_type)
+            
+            # Generate SQL
+            sql, params = self._generate_delete_sql(table, converted_where, schema)
+            
+            # Execute
+            cursor = self.connection.cursor()
+            cursor.execute(sql, params)
+            rowcount = cursor.rowcount
+            cursor.close()
+            self.connection.commit()
+            
+            # Return result as TOON
+            result_dict = {"rowcount": rowcount}
+            return self._to_toon([result_dict])
+        
+        except (SecurityError, SchemaError, ValueError):
+            raise
+        except psycopg2.OperationalError as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise ConnectionError(f"Connection error during delete: {e}") from e
+        except (psycopg2.ProgrammingError, psycopg2.IntegrityError) as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Delete failed: {e}") from e
+        except Exception as e:
+            try:
+                self.connection.rollback()
+            except:
+                pass
+            raise QueryError(f"Unexpected error during delete: {e}") from e
+    
     def close(self):
         """
         Close PostgreSQL connection if adapter owns it
