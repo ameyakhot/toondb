@@ -12,8 +12,8 @@ from toonpy.adapters.mysql_adapter import MySQLAdapter
 from toonpy.adapters.mongo_adapter import MongoAdapter
 
 # Connection strings for Docker instances
-POSTGRES_CONN_STRING = "postgresql://testuser:testpass@localhost:5432/testdb"
-MYSQL_CONN_STRING = "mysql://testuser:testpass@localhost:3306/testdb"
+POSTGRES_CONN_STRING = "postgresql://testuser:testpass@localhost:5433/testdb"
+MYSQL_CONN_STRING = "mysql://testuser:testpass@localhost:3307/testdb"
 MONGO_CONN_STRING = "mongodb://localhost:27017"
 MONGO_DATABASE = "testdb"
 

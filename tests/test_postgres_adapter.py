@@ -13,7 +13,7 @@ import uuid
 from toonpy import PostgresAdapter, ConnectionError, QueryError, SchemaError
 
 # Connection string for Docker PostgreSQL instance
-POSTGRES_CONN_STRING = "postgresql://testuser:testpass@localhost:5432/testdb"
+POSTGRES_CONN_STRING = "postgresql://testuser:testpass@localhost:5433/testdb"
 
 
 class TestPostgresAdapterUnit(unittest.TestCase):

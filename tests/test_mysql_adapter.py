@@ -12,7 +12,7 @@ from decimal import Decimal
 from toonpy import MySQLAdapter, ConnectionError, QueryError, SchemaError
 
 # Connection string for Docker MySQL instance
-MYSQL_CONN_STRING = "mysql://testuser:testpass@localhost:3306/testdb"
+MYSQL_CONN_STRING = "mysql://testuser:testpass@localhost:3307/testdb"
 
 
 class TestMySQLAdapterUnit(unittest.TestCase):

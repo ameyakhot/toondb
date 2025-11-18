@@ -9,8 +9,8 @@ import sys
 
 # Connection settings
 POSTGRES_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
+    "host": "127.0.0.1",
+    "port": 5433,
     "user": "testuser",
     "password": "testpass",
     "database": "testdb"
@@ -18,7 +18,7 @@ POSTGRES_CONFIG = {
 
 MYSQL_CONFIG = {
     "host": "localhost",
-    "port": 3306,
+    "port": 3307,
     "user": "testuser",
     "password": "testpass",
     "database": "testdb"
