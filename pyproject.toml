@@ -29,6 +29,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "groq>=0.33.0",
     "python-toon>=0.1.3",
     "tiktoken>=0.5.0",
 ]
@@ -44,6 +45,9 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "sentence-transformers>=2.2.0",
+    "numpy>=1.24.0",
 ]
 
 [project.urls]
