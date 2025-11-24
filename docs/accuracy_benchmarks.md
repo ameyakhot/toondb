@@ -23,13 +23,18 @@ The accuracy benchmark suite measures whether TOON format maintains equivalent a
 Install benchmark dependencies:
 
 ```bash
-pip install python-dotenv sentence-transformers numpy
+# Install toondb with benchmarks support (includes groq)
+pip install toondb[benchmarks]
+
+# Or install manually
+pip install python-dotenv sentence-transformers numpy groq
 ```
 
 Or if using the project's requirements:
 
 ```bash
 pip install -r requirements.txt
+pip install groq  # groq is optional, only needed for benchmarks
 ```
 
 ## Configuration
